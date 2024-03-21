@@ -12,7 +12,7 @@ pyNPM is a Python driver that implements the non-parametric probabilistic method
   - **Scripts/**: Contains problem-specific functions for generating, modifying, and reading Aero-S input files (e.g., `aeros_runs.py`).
   - **parameters.py**: Contains the definitions of problem-dependent variables.
 
-- **output#ID.d/**(problem specific)*
+- **output#ID.d/** *(problem specific)*
   - **Basis/**: Contains the Reduced Order Basis (ROB) files.
   - **Mesh/**: Contains outputs from hyperreduction.
   - **Results/**: Contains the probed reference results (e.g., HDM...).
@@ -26,7 +26,7 @@ pyNPM is a Python driver that implements the non-parametric probabilistic method
 To run the code:
 1. Create and populate the input.d/ output.d/ directories with problem and simulation specific files, and executables/.
 2. Modify the `Run.py` script to instantiate an object of the `SROMAeroS()` class (or a derived class) initialized with the path to the appropriate input and input ID directory.
-3. From the command line or a batch script, execute:
+3. From the command line or a batch script, allocate compute nodes as needed and execute:
     ```bash
     python3 Run.py < /dev/null
     ```
