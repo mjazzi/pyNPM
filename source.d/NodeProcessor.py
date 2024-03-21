@@ -57,7 +57,7 @@ class NodeProcessor:
     ncycles = int(np.ceil(njobs / (self.ncores_per_node * n_compute_nodes)))
     job_index = 0
   
-    #RT from sgd
+    # Account for sgd batch randomization
     non_analytical_realizations = np.array(list(
                           set(np.arange(self.N_sim, dtype = int)) - set(batch)))
     job_distribution_ = np.copy(batch)

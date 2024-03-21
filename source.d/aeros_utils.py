@@ -8,12 +8,8 @@ from scipy.io import mmread
 
 ################################################################################
 # Read the Aero-S ROB
-def readAeroSROB(filename, ndofspernode, IOParameters):
-# filename of the ASCII ROB file
-# ndofspernode - how many dofs per node to return in the ROB
-# V - ROB
-# ROB_nodes - list of nodes from the ROB file
-# ROB_tag - vector of tags from the ROB file
+def readAeroSROB(filename, n_dofs_per_node, IOParameters):
+
   f = open(filename, 'r')
   ROB_size = int(f.readline())
   ROB_n_nodes = int(f.readline())
@@ -21,18 +17,19 @@ def readAeroSROB(filename, ndofspernode, IOParameters):
   for i in range(ROB_n_nodes):
     ROB_nodes[i] = int(f.readline()) - 1
   ROB_tag = np.zeros(ROB_size)
-  V = np.zeros((ROB_n_nodes * ndofspernode, ROB_size))
+  V = np.zeros((ROB_n_nodes * n_dofs_per_node, ROB_size))
   ROB = np.zeros((6, ROB_n_nodes))
   for ii in range(ROB_size):
     ROB_tag[ii] = float(f.readline())
     for i in range(ROB_n_nodes):
       ROB[:,i]  = np.array(f.readline().split(), dtype = float)
-    V[:,ii]  = ROB[0:ndofspernode,:].flatten(order = 'F')
+    V[:,ii]  = ROB[0:n_dofs_per_node,:].flatten(order = 'F')
   f.close()
   return V, ROB_nodes, ROB_tag
 
 ################################################################################
 # Extract DISP from Aero-S input file
+
 def readAeroSInputDisp(filename):
   print('readAeroSInputDisp filename= ', filename)
   os.system('csplit -f yy -s %s /DISP/+1' % filename)
@@ -48,7 +45,7 @@ def referenceValues(IOParameters, problemParameters, observed_point):
   c_mean = 0
   c_std = 0
   delta = 1.2
-  ndofspernode = problemParameters.ndofspernode
+  n_dofs_per_node = problemParameters.n_dofs_per_node
   if hasattr(problemParameters, "compositeCostFlag"):
     compositeCostFlag = problemParameters.compositeCostFlag
   else:
@@ -59,27 +56,18 @@ def referenceValues(IOParameters, problemParameters, observed_point):
     file_disp = file_format(observed_point[ii,:], 'disp'); 
   
     print(file_format(observed_point[ii,:], 'dis'))
-    refsol_, tt = femsol('%s/%s/%s' % (IOParameters.OutputID, 
+    refsol_, tt = femsol('%s/%s/%s' % (IOParameters.output_ID, 
     	  IOParameters.ResultsHDM, file_dis), 3, 0)
     refsol = refsol_[:,problemParameters.solStartI:]
     if not problemParameters.hyperFlag:
-       romsol_, tt = femsol('%s/%s/%s' % (IOParameters.OutputID,
+       romsol_, tt = femsol('%s/%s/%s' % (IOParameters.output_ID,
     	  IOParameters.ResultsROM, file_disp), 3, 0)
     else:
-      print('%s/%s/%s' % (IOParameters.OutputID,
+      print('%s/%s/%s' % (IOParameters.output_ID,
             IOParameters.ResultsHROM, file_disp))
-      romsol_, tt = femsol('%s/%s/%s' % (IOParameters.OutputID,
+      romsol_, tt = femsol('%s/%s/%s' % (IOParameters.output_ID,
     	  IOParameters.ResultsHROM, file_disp), 3, 0)
     romsol = romsol_[:,problemParameters.solStartI:]
-
-#    if problemParameters.derivativeflag:
-#    #RT - from referenceValues_withderiv2.m
-#  mean_ref(:,:,ii)  =  refsol(problemParameters.probed_dofs,1:end);
-#  mean_rom(:,:,ii) = romsol(problemParameters.probed_dofs,1:end);
-#mean_ref = mean_ref(:, 2:(problemParameters.finalTime)/(25*problemParameters.timestep) + 1, ii) ;
-#mean_rom = mean_rom(:, 2:problemParameters.finalTime/(25*problemParameters.timestep)+ 1, ii) ;
-#std_ref(:,:,ii) = abs(mean_ref(:,:,ii)-mean_rom(:,:,ii))*delta;
-#    else:
 
     if ii == 0:
       mean_ref = np.zeros((len(problemParameters.probed_dofs), refsol.shape[1], observed_point.shape[0]))
@@ -87,7 +75,7 @@ def referenceValues(IOParameters, problemParameters, observed_point):
       std_ref = np.zeros((len(problemParameters.probed_dofs), refsol.shape[1], observed_point.shape[0]))
       if compositeCostFlag:
         if problemParameters.hyperFlag:
-          sampledHDMnodes = np.loadtxt('%s/eqNodes' % IOParameters.OutputID).astype(int)
+          sampledHDMnodes = np.loadtxt('%s/eqNodes' % IOParameters.output_ID).astype(int)
           sampledHDMdofs =np.vstack(((sampledHDMnodes-1)*3 + 1, (sampledHDMnodes-1)*3 + 2, (sampledHDMnodes-1)*3 + 3)).T.flatten()
           mean_ref_full = np.zeros((len(sampledHDMdofs),  refsol.shape[1], observed_point.shape[0]))
         else:
@@ -114,28 +102,6 @@ def referenceValues(IOParameters, problemParameters, observed_point):
         mean_ref_full[:,:,ii]= refsol[sampledHDMdofs,:]
     print('qualityFlag: ', qualityFlag)
 
-    #c_mean = c_mean + np.sum(mean_ref[:, :, ii] ** 2)
-    #c_std = c_std + np.sum(std_ref[:, :, ii] ** 2)
-    
-#  if problemParameters.derivativeflag:
-# %% print stiffness matrices
-#  aeros_printMatrices(observed_point, problemParameters, IOParameters)
-#  eval(sprintf('!%s %s/%s >& %s', IOParameters.programExec, IOParameters.OutputID, IOParameters.OutputMatrices, IOParameters.LogFileMassStiff));
-#  file=file_format(observed_point, '');
-#  sprintf('%s/%s.stiffness', IOParameters.ResultsMatrices, file)
-#  reformatK(sprintf('%s/%s.stiffness', IOParameters.ResultsMatrices, file))
-#  stiff_mat=load(sprintf('%s/%s.stiffness.new', IOParameters.ResultsMatrices, file)) ;
-#  k=spconvert(stiff_mat);
-#  %k=full(k);
-#  K=k + k.'-diag(diag(k));
-#
-#  reformatK(sprintf('%s/%s.mass', IOParameters.ResultsMatrices, file))
-#  mass_mat=load(sprintf('%s/%s.mass.new', IOParameters.ResultsMatrices, file)) ;
-#  m=spconvert(mass_mat);
-#  %m=full(m);
-#  M=m + m.'-diag(diag(m));
-#
-#
   return std_ref, mean_ref, mean_rom, \
          tt[problemParameters.solStartI:],  mean_ref_full
 
@@ -185,7 +151,7 @@ def aeros_rwSampledMesh(lr, pathname, opathname, sz):
 # Warning - this could be slow if reading a lot of nodes because the nodes
 # are not pre-allocated exactly
  
-  # RT - correct for now obsolete 2d scaling 
+  # Correct for now obsolete 2d scaling 
   if len(lr) == 2: 
     lr =np.array([lr[0], lr[1], lr[1]])
   # Split into three sections - before nodes including the inorm, nodes, and
@@ -228,9 +194,9 @@ def aeros_MassStiff2(parameterPoint, pathSampledMesh, IOParameters):
 
   
   file = file_format(parameterPoint, '')
-  pathOutput = '%s/%s' % (IOParameters.OutputID, IOParameters.OutputMassStiff)
-  pathInput = '%s/%s' % (IOParameters.InputID, IOParameters.Input)
-  pathMesh = '%s/%s' % (IOParameters.OutputID, IOParameters.Mesh)
+  pathOutput = '%s/%s' % (IOParameters.output_ID, IOParameters.mass_stiff_output)
+  pathInput = '%s/%s' % (IOParameters.input_ID, IOParameters.Input)
+  pathMesh = '%s/%s' % (IOParameters.output_ID, IOParameters.Mesh)
   
   f = open(pathOutput,'w')
   
@@ -276,7 +242,7 @@ def readROBPlus(problemParameters, IOParameters, observed_point, eroot):
     # Read the sampled ROB
     V, ROB_nodes, ROB_tag = readAeroSROB(
      '%s/Mesh/samplmsh.elementmesh.inc.compressed.basis.orthonormalized.out' %
-      IOParameters.OutputID, problemParameters.ndofspernode, IOParameters)
+      IOParameters.output_ID, problemParameters.n_dofs_per_node, IOParameters)
     
     # Orthogonalize the basis
     [Q,R] = np.linalg.qr(V)
@@ -284,43 +250,43 @@ def readROBPlus(problemParameters, IOParameters, observed_point, eroot):
     
     # Find unconstrained dofs by reading DISPLACEMENT section of the input file
     # Assumes simple dof numbering
-    BC = readAeroSInputDisp('%s/Mesh/samplmsh.elementmesh.inc' % IOParameters.OutputID)
+    BC = readAeroSInputDisp('%s/Mesh/samplmsh.elementmesh.inc' % IOParameters.output_ID)
     
     # Generate the mass matrix that corresponds to the observed parameter
     for ii in range(observed_point.shape[0]):
       # Scale the sampled mesh
       aeros_rwSampledMesh(observed_point[ii,:],
-          '%s/Mesh/samplmsh.elementmesh.inc' % IOParameters.OutputID,'%s/Mesh/samplmshx.elementmesh.inc' % IOParameters.OutputID, 0)
+          '%s/Mesh/samplmsh.elementmesh.inc' % IOParameters.output_ID,'%s/Mesh/samplmshx.elementmesh.inc' % IOParameters.output_ID, 0)
       # Create Aero-s input file to generate the mass matrix
       aeros_MassStiff2(observed_point[ii,:],
-       '%s/Mesh/samplmshx.elementmesh.inc' % IOParameters.OutputID, IOParameters)
+       '%s/Mesh/samplmshx.elementmesh.inc' % IOParameters.output_ID, IOParameters)
       # Run Aero-s
-      os.system('%s/aeros -v 2 %s/%s  >& %s' % (eroot, IOParameters.OutputID,
-         IOParameters.OutputMassStiff, IOParameters.LogFileMassStiff))
+      os.system('%s/aeros -v 2 %s/%s  >& %s' % (eroot, IOParameters.output_ID,
+         IOParameters.mass_stiff_output, IOParameters.mass_stiff_log_file))
       file = file_format(observed_point[ii, :], '')
-      # RT - read matrix and convert to full matrices as Python sparse matrix
+      # Read matrix and convert to full matrices as Python sparse matrix
       #      support seems sparse
       M.append(mmread('%s/%s/%s.mass' % 
-         (IOParameters.OutputID, IOParameters.Mesh, file)).toarray())
+         (IOParameters.output_ID, IOParameters.Mesh, file)).toarray())
       K.append(mmread('%s/%s/%s.stiffness' %
-         (IOParameters.OutputID, IOParameters.Mesh, file)).toarray())
+         (IOParameters.output_ID, IOParameters.Mesh, file)).toarray())
       aeros_rwSampledMesh(observed_point[ii,:],
-       '%s/Mesh/samplmsh.elementmesh.inc' % IOParameters.OutputID,
-       '%s/Mesh/samplmsh.new%d.elementmesh.inc' % (IOParameters.OutputID, ii),
+       '%s/Mesh/samplmsh.elementmesh.inc' % IOParameters.output_ID,
+       '%s/Mesh/samplmsh.new%d.elementmesh.inc' % (IOParameters.output_ID, ii),
        V.shape[1])
     
     x = aeros_rwSampledMesh([1.0, 1.0, 1.0],
-        '%s/Mesh/samplmsh.elementmesh.inc' % IOParameters.OutputID,
-        '%s/Mesh/samplmshx.elementmesh.inc' % IOParameters.OutputID, 0)
+        '%s/Mesh/samplmsh.elementmesh.inc' % IOParameters.output_ID,
+        '%s/Mesh/samplmshx.elementmesh.inc' % IOParameters.output_ID, 0)
       
   else: 
     V, ROB_nodes, ROB_tag = readAeroSROB(
-        '%s/%s.out' % (IOParameters.OutputID, IOParameters.BasisOrth),
-         problemParameters.ndofspernode, IOParameters)
+        '%s/%s.out' % (IOParameters.output_ID, IOParameters.orth_basis_dir),
+         problemParameters.n_dofs_per_node, IOParameters)
     R = []
     
-    x = np.loadtxt('%s/Input/GEOMETRY.txt' % IOParameters.InputID, usecols = (1, 2, 3), skiprows = 1)
-    BC = np.loadtxt('%s/Input/DISPLACEMENTS.txt' % IOParameters.InputID,
+    x = np.loadtxt('%s/Input/GEOMETRY.txt' % IOParameters.input_ID, usecols = (1, 2, 3), skiprows = 1)
+    BC = np.loadtxt('%s/Input/DISPLACEMENTS.txt' % IOParameters.input_ID,
                      skiprows = 1)
   return V, ROB_nodes, ROB_tag, x, BC, K, M, R
 

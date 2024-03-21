@@ -41,7 +41,7 @@ def computeWassersteinNormalizingConstants(norm_mean_ref, norm_std_ref, t):
     for i in range(norm_mean_ref.shape[2]):
         c_mean[:,i] = ot.wasserstein_1d(np.tile(t.reshape(-1,1), (1,norm_mean_ref.shape[0])), np.tile(t.reshape(-1,1), (1,norm_mean_ref.shape[0])),(1/len(t))* np.ones(norm_mean_ref.shape[:2]).T, norm_mean_ref[:,:,i].T,p=2)
         c_std[:,i] = ot.wasserstein_1d(np.tile(t.reshape(-1,1), (1,norm_mean_ref.shape[0])), np.tile(t.reshape(-1,1), (1,norm_mean_ref.shape[0])),(1/len(t))* np.ones(norm_mean_ref.shape[:2]).T, norm_std_ref[:,:,i].T,p=2)
-    return 1e4*c_mean, 1e4*c_std
+    return c_mean, c_std
   except ImportError:
     print('Module ot is not available - aborting.')
     exit()

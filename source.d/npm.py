@@ -17,10 +17,9 @@ def GtoW2(G, sigma, s, V, B, dGdB = []):
     Z = U - V @ D
    
     Norm = np.identity(Z.shape[1]) + s * s * Z.T @ Z
-    H = fractional_matrix_power(Norm, -1.0/2.0) #M %MatPhi * Eigm12 * (MatPhi');
+    H = fractional_matrix_power(Norm, -1.0/2.0) 
     W = (V + s * Z) @ H
    
-    # RT version from NPM.d7
     dVds, dVdB, dVdSig = deriv_v_a(V, Z, sigma, s, G, dGdB, B)
     return W, dVds, dVdB, dVdSig
 
@@ -144,12 +143,10 @@ def deriv_IB_a(Z, s, dZda_B, dZda_Sig):
   N, n = B.shape
   
   # Component-wise derivative 
-  # dIBds
+
   dIBds = 2 * s * (Z.T @ Z)
-  # dIBdB
   dZdB = dZda_B
   dIBdB = s**2 * (dZdB.T @ Z + Z.T @ dZdB);
-  # dIBdSig
   dZdSig=dZda_Sig
   n_sigma = int((n * (n + 1)) / 2)
   A1 = np.reshape(Z.T @ np.reshape(dZdSig, (N, n * n_sigma), order = 'F'),
@@ -164,7 +161,6 @@ def deriv_IB_a(Z, s, dZda_B, dZda_Sig):
 
 ################################################################################
 def deriv_z_a(V, sigma, G, dGdB):
-  # dG/da * sigma
   
   N, n = G.shape
   
@@ -218,16 +214,10 @@ def deriv_sqinv(s, Z, dZda_B, dZda_Sig):
    
   F = np.einsum('ijkl,klmn->ijmn', D, E)
   dIBds, dIBdB, dIBdSig = deriv_IB_a(Z, s, dZda_B, dZda_Sig)
-   
   
   # Componentwise derivative 
-  # w.r.t. s 
   dIBsq_ds = np.einsum('ijmn,mn->ij', F, dIBds)
-  
-  # w.r.t. B 
   dIBsq_dB = np.einsum('ijmn,mn->ij', F, dIBdB)
-
-  # w.r.t. Sigma
   dIBsq_dSig = np.einsum('ijkl,klm->ijm', F, dIBdSig)
 
   return dIBsq_ds, dIBsq_dB, dIBsq_dSig, sqA
@@ -247,12 +237,10 @@ def deriv_v_a(V, Z, sigma, s, G, dGdB, B):
   dvsz_dB = s * dZda_B
   dvsz_dSig = s * dZda_Sig
   
-  # w.r.t. s 
   dVds = dvsz_ds @ sqA + (V + s*Z) @ dIBsq_ds
-  # w.r.t. B
+
   dVdB = dvsz_dB @ sqA + (V + s*Z) @ dIBsq_dB; 
 
-  # w.r.t. Sigma
   n_sigma = (n * (n+1)) / 2
   dVdSig = np.einsum('ikm,kj->ijm', dvsz_dSig, sqA) + \
            np.einsum('ik,kjm->ijm', V + s * Z, dIBsq_dSig)

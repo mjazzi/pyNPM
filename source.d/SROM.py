@@ -23,7 +23,6 @@ def getPBSInfo():
   f = open(filename, 'r')
   nodesn = a=f.readlines()
   unodesn = list(set(nodesn))
-  # Strip \n
   unodes = []
   for unoden in unodesn:
     unodes.append(unoden.strip())
@@ -72,7 +71,7 @@ def initHyperParameters(Gparams, stochasticParameters):
   Rrow = np.zeros(m_sigma, dtype = int) # rows of the entries in sigma
   Rcolumn = np.zeros(m_sigma, dtype = int) # columns of the entries in sigma
   Rsigma_0 = np.zeros(m_sigma) # values of sigma stored in a vector
-  sigma_0_full = stochasticParameters.diagCoef * np.identity(Gparams.n)
+  sigma_0_full = stochasticParameters.diag_coef * np.identity(Gparams.n)
   nbsigma = m_sigma
   ind = 0
   for j in range(Gparams.n):
@@ -93,35 +92,35 @@ def initHyperParameters(Gparams, stochasticParameters):
   m_alpha = nbsigma + 2
   lb = np.zeros(m_alpha)
   ub = np.zeros(m_alpha)
-  minDiag = stochasticParameters.minDiag
-  minExtraDiag = stochasticParameters.minExtraDiag
-  maxDiag = stochasticParameters.maxDiag
-  maxExtraDiag = stochasticParameters.maxExtraDiag
+  diag_min = stochasticParameters.diag_min
+  extra_diag_min = stochasticParameters.extra_diag_min
+  diag_max = stochasticParameters.diag_max
+  extra_diag_max = stochasticParameters.extra_diag_max
   for ind in range(nbsigma):
     j = Rrow[ind]
     k = Rcolumn[ind]
     if j == k:
-      ll = minDiag
-      uu = maxDiag
+      ll = diag_min
+      uu = diag_max
     if j != k:
-      ll = minExtraDiag
-      uu = maxExtraDiag
+      ll = extra_diag_min
+      uu = extra_diag_max
     lb[ind] = ll
     ub[ind] = uu
-  lb[nbsigma] = stochasticParameters.lb_s  # lower bound for s
-  ub[nbsigma] = stochasticParameters.ub_s # upper bound for s
-  lb[nbsigma + 1] = stochasticParameters.lb_beta # lower bound for beta
-  ub[nbsigma + 1] = stochasticParameters.ub_beta # upper bound for beta
+  lb[nbsigma] = stochasticParameters.lb_s  
+  ub[nbsigma] = stochasticParameters.ub_s 
+  lb[nbsigma + 1] = stochasticParameters.lb_beta 
+  ub[nbsigma + 1] = stochasticParameters.ub_beta 
   return Rrow, Rcolumn, alpha_0, lb, ub
 
 ################################################################################
-# Initialization of some of the Gparams
+# Initialization of the parameters of matrix G 
 def initGparams(Vshape, x,  Gparams):
-  # Initialize parameters needed for G (random matrix) - follows appendix D
+  # Initialize parameters needed for G (random matrix) - notation follows appendix D
   # of Farhat and Soize (2017) 
-  Gparams.n = Vshape[1] # Basis dimension
-  Gparams.N0 = int(Vshape[0] / Gparams.m)  # Number of nodes
-  Gparams.N = Gparams.m * Gparams.N0 # Total number of dofs
+  Gparams.n = Vshape[1] 
+  Gparams.N0 = int(Vshape[0] / Gparams.m)  
+  Gparams.N = Gparams.m * Gparams.N0 
 
   for i in range(Gparams.d):
     Gparams.L[i] = np.ptp(x[:, i])
@@ -163,7 +162,6 @@ class RunParameters:
 # Define an auxiliary object for the cost function optimization
 class ObjectiveF:
   def __init__(self, N_sim, rng, costFunction):
-    #RT x, Dof,Regular, V, B, R in problemParameters
     self.N_sim = N_sim
     self.rng = rng
     self.costFunction = costFunction
@@ -183,11 +181,8 @@ class ObjectiveF:
 
   def setBatch(self, batch_size):
     self.batch_size = batch_size
-    #self.batches = np.random.permutation(problemParameters.N_sim)
     self.batches = self.rng.permutation(self.N_sim)
-    #RT
-    #self.batches = np.arange(self.problemParameters.N_sim, dtype = int)
-
+   
   def callback_sgd(self, params):
     print("Iteration %d" % self.counter)
     print("alpha =  {}".format(params), flush = True)
@@ -214,7 +209,6 @@ def cleanNode(node):
 
 ################################################################################
 # Function to convert results of Parallel (list) to arrays 
-# only 1 or 2 indeces allowed (ni)
 def convertParallelListToArray(res, ixDim):
   ni = len(ixDim)
   na = 0
@@ -241,7 +235,7 @@ def convertParallelListToArray(res, ixDim):
 class SROMBase:
 
   def __init__(self, problemPath):
-    # Specify directory that contain problem-specific input and output files
+    # Specify directory that contain problem-specific input_dir and output files
     self.problemPath = problemPath
     sys.path.append(problemPath)
     # Initialize problem dependent parameters
@@ -261,19 +255,19 @@ class SROMBase:
 def makeSROMAeroS(j, problemParameters, IOParameters, Gparams, 
   ArrayRand1IDENT, ArrayRand2IDENT, sigma, s, beta, 
   probed_dofs, root, proot, croot2, batch):
-  #RT x, Dof, Regular, V, B, R in problemParameters
+
   from aeros_runs import aeros_buildROM, aeros_buildHROM
 
   print('batch', batch, flush = True)
 
-  derivativeFlag = len(np.nonzero(batch == j)[0]) > 0 and \
-                   problemParameters.derivativeFlag
-  if not derivativeFlag:
+  derivative_flag = len(np.nonzero(batch == j)[0]) > 0 and \
+                   problemParameters.derivative_flag
+  if not derivative_flag:
     G = generateG(Gparams, beta,
         problemParameters.x, problemParameters.Dof, problemParameters.Regular, 
                   ArrayRand1IDENT[:,:,:,:,j], ArrayRand2IDENT[:,:,:,:,j])
     WW = GtoW2(G, sigma, s, problemParameters.V, problemParameters.B)
-    #RT - from sgd
+
     if len(problemParameters.R) !=0:
        W = WW @ problemParameters.R
     else:
@@ -289,7 +283,7 @@ def makeSROMAeroS(j, problemParameters, IOParameters, Gparams,
          ArrayRand1IDENT[:,:,:,:,j], ArrayRand2IDENT[:,:,:,:,j], True)
     WW, dVkda_s_, dVkda_B_, dVkda_Sig_ = GtoW2(G, sigma, s,
          problemParameters.V, problemParameters.B, dGdB)
-    #RT - from sgd
+
     if len(problemParameters.R) !=0:
        W = WW @ problemParameters.R
        dVkda_s = dVkda_s_ @ problemParameters.R
@@ -318,14 +312,14 @@ def makeSROMAeroS(j, problemParameters, IOParameters, Gparams,
                 dVkds_probed, dVkdB_probed, dVkdSig_probed)
     
   for i in range(problemParameters.mu.shape[0]):
-    k = i * problemParameters.N_sim + j # Python indices run from 0
+    k = i * problemParameters.N_sim + j 
     # Storage directory for k-th realization
     croot = '%s/%d' % (root, k)
     paths = [proot, croot, croot2]
     os.mkdir(croot)
     
     # Write SROM - use the same file for both sampled and unsampled
-    fid = open('%s/SROB.orthonormalized.out' % croot, 'w')
+    fid = open('%s/SROB_dir.orthonormalized.out' % croot, 'w')
     print('%d\n%d' % (Gparams.n, len(problemParameters.ROB_nodes)), file = fid)
     np.savetxt(fid, problemParameters.ROB_nodes+ 1, fmt = '  %d')
     for ii in range(Gparams.n):
@@ -337,36 +331,19 @@ def makeSROMAeroS(j, problemParameters, IOParameters, Gparams,
         np.savetxt(fid, np.reshape(W[:, ii], (-1, 6), order = 'C'))
     fid.close()
     
-    if problemParameters.hyperFlag:
-      # RT: If sampled, compute and write also the reduced mass matrices from
-      # pre-computed sampled mass matrices and the current sampled SROB -
-      # sampled mass matrices are only for problemData.unconstrained dofs,
-      # but SROB is for constrained too
-      Wu = W[problemParameters.uncdof,:]
-      if problemParameters.sampledFlag:
-        Mr = Wu.T @ (problemParameters.M[i] @ Wu)
-        fid = open('%s/samplmsh.new.reducedmass' % croot, 'w')
-        np.savetxt(fid, Mr)
-        fid.close()
-        Kr = Wu.T @ (problemParameters.K[i] @ Wu)
-        Cr = problemParameters.rayDamp[0]*Kr + problemParameters.rayDamp[1]*Mr
-        fid = open('%s/samplmsh.new.reduceddamping' % croot, 'w')
-        np.savetxt(fid, Cr)
-        fid.close()
-    
-    # Generate input files and a batch file to run them
-    if not problemParameters.hyperFlag:
+    # Generate input_dir files and a batch file to run them
+    if not problemParameters.hyperreduction_flag:
       aeros_buildROM(problemParameters.mu[i,:], problemParameters, IOParameters, paths)
       
       # Create batch files
       f = open('%s/batch' % croot,'w')
       f.write('touch  %s/start\n' % croot2)
-      f.write('%s e %s/%s.out >& %s/%s\n' % (IOParameters.robExec, croot2,
-               IOParameters.SROB,croot2, IOParameters.LogFileROB))
-      f.write('mv %s/%s.out.out %s/%s\n' % (croot2, IOParameters.SROB,
-                                             croot2,IOParameters.SROB))
-      f.write('%s -v 2  %s/%s >& %s/%s\n' % (IOParameters.programExec, croot2,
-            IOParameters.OutputROM, croot2,IOParameters.LogFileROM))
+      f.write('%s e %s/%s.out >& %s/%s\n' % (IOParameters.rob_exec, croot2,
+               IOParameters.SROB_dir,croot2, IOParameters.ROB_log_file))
+      f.write('mv %s/%s.out.out %s/%s\n' % (croot2, IOParameters.SROB_dir,
+                                             croot2,IOParameters.SROB_dir))
+      f.write('%s -v 2  %s/%s >& %s/%s\n' % (IOParameters.program_exec, croot2,
+            IOParameters.ROM_output, croot2,IOParameters.ROM_log_file))
       f.write('cp %s/dis* %s/%d \n' % (croot2, root, k))
       f.write('cp %s/acc* %s/%d \n' % (croot2, root, k))
       f.write('cp %s/vel* %s/%d \n' % (croot2, root, k))
@@ -374,23 +351,23 @@ def makeSROMAeroS(j, problemParameters, IOParameters, Gparams,
       f.write('touch  %s/done%d\n' % (root,k))
       f.close()
     else:
-      if problemParameters.sampledFlag:
-        os.system('cp %s/Mesh/samplmsh.new%d.elementmesh.inc %s/samplmsh.new.elementmesh.inc '% (IOParameters.OutputID, i, croot))
+      if problemParameters.sampled_mesh_flag:
+        os.system('cp %s/Mesh/samplmsh.new%d.elementmesh.inc %s/samplmsh.new.elementmesh.inc '% (IOParameters.output_ID, i, croot))
       else:
         aeros_spnnlsnew(Gparams.n, problemParameters.mu[i,:],problemParameters, IOParameters, paths)
-      #RT new version from sgd
+
       aeros_buildHROM(problemParameters.mu[i,:], problemParameters, IOParameters,
-                      derivativeFlag, k, paths)
+                      derivative_flag, k, paths)
       f = open('%s/batch' % croot, 'w')
       f.write(' touch  %s/start\n' % croot2)
-      f.write('%s e %s/%s.out >& %s/%s\n' % (IOParameters.robExec, croot2, IOParameters.SROB, croot2, IOParameters.LogFileROB))
-      f.write('mv %s/%s.out.out %s/%s\n' % (croot2, IOParameters.SROB, croot2, IOParameters.SROB))
+      f.write('%s e %s/%s.out >& %s/%s\n' % (IOParameters.rob_exec, croot2, IOParameters.SROB_dir, croot2, IOParameters.ROB_log_file))
+      f.write('mv %s/%s.out.out %s/%s\n' % (croot2, IOParameters.SROB_dir, croot2, IOParameters.SROB_dir))
       
-      if not problemParameters.sampledFlag:
-        f.write('%s -v 2  %s/%s >& %s/%s\n' % (IOParameters.programExec,
-         croot2, IOParameters.OutputSpnnlsNew, croot2, IOParameters.LogFileSpnnlsNew))
-      f.write('%s -v 2  %s/%s >& %s/%s\n' % (IOParameters.programExec,
-         croot2, IOParameters.OutputHROM, croot2, IOParameters.LogFileHROM))
+      if not problemParameters.sampled_mesh_flag:
+        f.write('%s -v 2  %s/%s >& %s/%s\n' % (IOParameters.program_exec,
+         croot2, IOParameters.spnnls_output_2, croot2, IOParameters.spnnls_log_file_2))
+      f.write('%s -v 2  %s/%s >& %s/%s\n' % (IOParameters.program_exec,
+         croot2, IOParameters.HROM_output, croot2, IOParameters.HROM_log_file))
       f.write('cp %s/dis* %s/%d \n' % (croot2, root, k))
       f.write('cp %s/acc* %s/%d \n' % (croot2, root, k))
       f.write('cp %s/vel* %s/%d \n' % (croot2, root, k))
@@ -401,8 +378,8 @@ def makeSROMAeroS(j, problemParameters, IOParameters, Gparams,
 
 ################################################################################
 # Post-process SROM realization results
-# Standalone function as Parallel supposedly packages the whole object otherwise
-def postProAeroS(i, j, filename, filename2, derivativeFlag, linearFlag, si,
+# Standalone function as Parallel packages the whole object otherwise
+def postProAeroS(i, j, filename, filename2, derivative_flag, linear_flag, si,
             Vk_probed,
             dVkds_unc, dVkdB_unc, dVkdSig_unc,
             dVkds_probed, dVkdB_probed, dVkdSig_probed,
@@ -410,20 +387,18 @@ def postProAeroS(i, j, filename, filename2, derivativeFlag, linearFlag, si,
   f = open(filename, 'r')
   f.readline()
   ncoord = int(f.readline())
-  # RT - vanilla Python code - something faster needed
+  # vanilla Python code - something faster needed
   array = []
   for line in f:
     for x in line.split():
       array.append(x)
   v = np.array(array, dtype=float)
   f.close()
-  if not linearFlag:
+  if not linear_flag:
     coord = np.reshape(v, (ncoord + 1, -1), order = 'F')
-    # Compute solution on probed dofs
-    #RT sol = (Vk_probed[j,:,:] @ coord[1:,:]).T
     sol = (Vk_probed[j,:,:] @ coord[1:,si:])
 
-    if derivativeFlag:
+    if derivative_flag:
       y_r = coord[1:,:]
       tau = coord.shape[1]
       dyn_dV = new_read_dydv_files(filename2, n, N, uncdof, tau)
@@ -440,8 +415,7 @@ def postProAeroS(i, j, filename, filename2, derivativeFlag, linearFlag, si,
     else:
       return (i, j, sol)
   else:
-    #RT - missing derivatives and not updated from sgd
-    coord = np.reshape(v, (ncoord * problemParameters.ndofspernode + 1, -1),
+    coord = np.reshape(v, (ncoord * problemParameters.n_dofs_per_node + 1, -1),
                          order = 'F')
     ycoord = coord[1:,:]
     return (i, j, ycoord[probed_dofs,:].T)
@@ -452,18 +426,18 @@ class SROMAeroS(SROMBase):
   def __init__(self, problemPath):
     super().__init__(problemPath)
     # Add problem dependent code into the search path 
-    sys.path.append('./%s/Scripts' %  self.IOParameters.InputID)
-    print('appending ','./%s/Scripts' %  self.IOParameters.InputID)
+    sys.path.append('./%s/Scripts' %  self.IOParameters.input_ID)
+    print('appending ','./%s/Scripts' %  self.IOParameters.input_ID)
 
     # Copy Aero-S executable into working directory
     eroot = '../Executables'
-    os.system('cp %s %s' % (self.IOParameters.programExec_original, eroot))
-    os.system('cp %s %s' % (self.IOParameters.robExec_original, eroot))
+    os.system('cp %s %s' % (self.IOParameters.program_exec_original, eroot))
+    os.system('cp %s %s' % (self.IOParameters.rob_exec_original, eroot))
 
     # Read reference and ROM/HROM solution: determine target mean and standard
     # deviation for NPM
     observed_point = self.problemParameters.mu
-    #RT - skipping the linear flag case for now
+
     self.std_ref, self.mean_ref, self.mean_rom, self.t, self.mean_ref_full_ = \
        referenceValues(self.IOParameters, self.problemParameters,
                        observed_point)
@@ -479,7 +453,7 @@ class SROMAeroS(SROMBase):
                  observed_point, eroot)
     uncdofFlag = np.ones(self.problemParameters.V.shape[0])
     uncdofFlag[((BC[:,0] - 1) *
-                    self.problemParameters.ndofspernode +
+                    self.problemParameters.n_dofs_per_node +
                  BC[:,1] - 1).astype(int)] = 0
     self.problemParameters.uncdof = np.squeeze(np.argwhere(uncdofFlag))
 
@@ -500,7 +474,7 @@ class SROMAeroS(SROMBase):
     self.problemParameters.Regular[(BC[:, 0] - 1).astype(int)] = 0  # RT - assumption that all dofs of a node are constrained
 
   ##############################################################################
-  # Example of optimization function
+  # optimization function
   def optimize(self , nit = 60, _alpha_0 = []):
 
     self.Rrow, self.Rcolumn, alpha_0, lb, ub = \
@@ -518,10 +492,10 @@ class SROMAeroS(SROMBase):
                                   self.problemParameters.N_sim))
 
     bnds = Bounds(lb, ub)
-    if not self.problemParameters.useR:
+    if not self.problemParameters.use_R:
       R = []
 
-    # Cost function weights and mean_ref_full
+    # Cost function weights and full reference mean 
     if hasattr(self.problemParameters, "distance_metric"):
       if self.problemParameters.distance_metric == "wasserstein":
         from misc_utils import preProcessWasserstein, \
@@ -539,7 +513,7 @@ class SROMAeroS(SROMBase):
       w = self.stochasticParameters.weight_mean
     self.coeff_mean = w / self.c_mean
     try: 
-      if self.problemParameters.compositeCostFlag:
+      if self.problemParameters.composite_cost_flag:
         self.w_p = self.stochasticParameters.weight_proj
         w += self.w_p
         self.mean_ref_full = self.mean_ref_full_[
@@ -555,24 +529,13 @@ class SROMAeroS(SROMBase):
       of.setBatch(self.problemParameters.batch_size)
     else:
       of.setBatch(self.problemParameters.N_sim)
-    #of.objective(alpha_0)
     
     # Optimize the cost function
-    if self.problemParameters.derivativeFlag:
+    if self.problemParameters.derivative_flag:
       jac = True
     else:
       jac = '2-point'
     
-#    #opt_params = minimize(of.objective, alpha_0, callback = of.callback_sgd_tr,
-#    opt_params = minimize(of.objective, alpha_0, callback = of.callback_sgd,
-#                                     jac = jac, bounds = bnds,
-#                                     method='SLSQP',
-#                                     options = { 'maxiter': nit, 'disp': True })
-#    #                                    method='TNC',
-#    #                                    method='SLSQP',
-#    #                                    method='L-BFGS-B',
-#    #                                    method='trust-constr',
-
     opt_params = basinhopping(of.objective, alpha_0, minimizer_kwargs={'method':'SLSQP', 'jac':jac, 'callback':of.callback_sgd, 'bounds':bnds}, disp=True, stepsize=2, T=2)
     
     # Print and save the optimal values
@@ -582,11 +545,9 @@ class SROMAeroS(SROMBase):
 #   return alpha_0
 
   ##############################################################################
-  # Example of postprocessing
+  # postprocessing
   def postprocessing(self, alpha, n_realiz):
 
-  # Uses self.Gparams, self.stochasticParameters, self.runParameters,
-  # self.problemParameters, self.IOParameters
     self.Rrow, self.Rcolumn, alpha_0, lb, ub = \
       initHyperParameters(self.Gparams, self.stochasticParameters)
     sigma, s, beta = alphaToHyperparameters(alpha, self.Gparams.n,
@@ -628,9 +589,6 @@ class SROMAeroS(SROMBase):
   # Example of plotting the results
   def plot(self, sol, mean_ref, mean_rom, i_mu, start, pc, dof, filename):
 
-    #i_mu = 0
-    #start = 1
-    #pc = 0.95
     sol_inf = np.quantile(sol[i_mu,:,:,:], 1 - pc, axis = 0)
     sol_sup = np.quantile(sol[i_mu,:,:,:], pc, axis = 0)
     
@@ -657,10 +615,10 @@ class SROMAeroS(SROMBase):
                                             self.Rrow, self.Rcolumn)
     N_sim = self.problemParameters.N_sim
     nbsigma = len(self.Rrow)
-    if hasattr(self.problemParameters, "compositeCostFlag"):
-      compositeCostFlag = self.problemParameters.compositeCostFlag
+    if hasattr(self.problemParameters, "composite_cost_flag"):
+      composite_cost_flag = self.problemParameters.composite_cost_flag
     else:
-      compositeCostFlag = False
+      composite_cost_flag = False
     if hasattr(self.problemParameters, "distance_metric"):
       distance_metric = self.problemParameters.distance_metric
     else:
@@ -672,23 +630,11 @@ class SROMAeroS(SROMBase):
        self.makeAndRunRealizations(sigma, s, beta, batch)
     print(N_sim, ' realizations time: ', time.time() - trealiz, flush = True)
 
-    #with open('test.npy', 'wb') as f:
-    #  np.save(f, sol)
-    #  np.save(f, dVyds)
-    #  np.save(f, dVydB)
-    #  np.save(f, dVydSig)
-    #  np.save(f, Vk_unc)
-    #  np.save(f, dVds)
-    #  np.save(f, dVdB)
-    #  np.save(f, dVdSig)
-
     # Add modules for Wasserstein's derivatives
     if hasattr(self.problemParameters, "distance_metric"):
       if self.problemParameters.distance_metric == "wasserstein":
         try:
           from jax import jacfwd
-          #from jax.config import config
-          #config.update("jax_enable_x64", True)
           import ot
           import torch
           from misc_utils import preProcessWasserstein, \
@@ -709,16 +655,16 @@ class SROMAeroS(SROMBase):
   
     tmean= time.time()
     solSq = sol * sol
-    #RT
-    #matlab = sio.loadmat('../../NPM.d7/Source/InCostFunction.mat')
+
     for i in range(self.problemParameters.m_mu):
       solSum = np.sum(sol[i,:,:,:], axis = (0))
       solSumSq = np.sum(solSq[i,:,:,:], axis = (0))
   
   
-      if self.problemParameters.derivativeFlag:
+      if self.problemParameters.derivative_flag:
         solSum_forderiv = np.sum(sol[i,batch,:,:], axis = (0))
         solSumSq_forderiv = np.sum(solSq[i,batch,:,:], axis = (0))
+
         # w.r.t s
         sumDerivSol_s = np.sum(dVyds[i,batch,:,:], axis = (0))
         dEosq_ds = np.sum(2.0 * sol[i,batch,:,:] * dVyds[i,batch,:,:], axis = (0))
@@ -739,35 +685,29 @@ class SROMAeroS(SROMBase):
       H = expectancy2 - square_expectancy
       var = np.sqrt(np.abs(expectancy2 - square_expectancy))
 
-      # Composite flag - new MJ
-      if compositeCostFlag:
-        orthProjSum = 0
+      if composite_cost_flag:
+        orth_proj_sum = 0
         dOrthds = 0
         dOrthdB = 0
         dOrthdSig = 0
         for j in range(N_sim):
           Vb = Vk_unc[j,:,:]
-          print('size Vb')
-          print(Vb.shape)
-          print('mean_ref_full shape')
-          print(self.mean_ref_full.shape)
-          projectTerm = -Vb @ (Vb.T@self.mean_ref_full[:,:,0])
-          projTerm  = projectTerm + self.mean_ref_full[:,:,0]
-          orthProjSum += projTerm
-          derivativeFlag = len(np.nonzero(batch == j)[0]) > 0 and self.problemParameters.derivativeFlag
-          if derivativeFlag:
-            dOrthdNorm=-2*projTerm
+          projection = -Vb @ (Vb.T@self.mean_ref_full[:,:,0])
+          orth_proj  = projection + self.mean_ref_full[:,:,0]
+          orth_proj_sum += orth_proj
+          derivative_flag = len(np.nonzero(batch == j)[0]) > 0 and self.problemParameters.derivative_flag
+          if derivative_flag:
+            dOrthdNorm=-2*orth_proj
             dOrthds +=  np.sum(dOrthdNorm * ((dVds[j,:,:]@Vb.T + Vb@dVds[j,:,:].T) @ self.mean_ref_full[:,:,0]), axis=(0,1))
             dOrthdB +=  np.sum(dOrthdNorm * ((dVdB[j,:,:]@Vb.T + Vb@dVdB[j,:,:].T) @ self.mean_ref_full[:,:,0]), axis=(0,1))
             dOrthdSig=np.sum(np.tile(np.expand_dims(dOrthdNorm, axis=2), (1,1,nbsigma))*np.einsum('ijk,jl->ilk',np.einsum('ijk,jl->ilk', dVdSig[j,:,:,:], Vb.T) + np.einsum('ij,jlk->ilk', Vb, np.transpose(dVdSig[j,:,:,:], (1,0,2))), self.mean_ref_full[:,:,0]), axis=(0,1))
-        if self.problemParameters.derivativeFlag:
+        if self.problemParameters.derivative_flag:
           dOrthds /= len(batch)
           dOrthdB /= len(batch)
           dOrthdSig /= len(batch)
-        expOrthProj = orthProjSum/N_sim
+        exp_orth_proj = orth_proj_sum/N_sim
   
-      if self.problemParameters.derivativeFlag:
-        #RT - from sgd
+      if self.problemParameters.derivative_flag:
         expectancy_sgd = solSum_forderiv / len(batch)
         square_expectancy_sgd =  expectancy_sgd ** 2
         expectancy2_sgd = solSumSq_forderiv / len(batch)
@@ -778,21 +718,18 @@ class SROMAeroS(SROMBase):
         dabsHdH = np.sign(H_sgd) # RT - zero becomes zero, not 1, does it matter?
         elementwise_deriv = var_p * dabsHdH
   
-        #RT - edited from sgd (N_sim -> len(batch), ...
         # w.r.t. s
         dEosq_ds = 1.0 / len(batch) * dEosq_ds
         dWds = sumDerivSol_s / len(batch)
         dWsq_ds = 2.0 * expectancy_sgd * dWds
         dHds = dEosq_ds - dWsq_ds
         dvar_ds = elementwise_deriv * dHds
-        # dvar_ds = derivH * dHds;
         # w.r.t. B
         dEosq_dB = 1.0 / len(batch) * dEosq_dB
         dWdB = sumDerivSol_B / len(batch)
         dWsq_dB = 2.0 * expectancy_sgd * dWdB
         dHdB = dEosq_dB - dWsq_dB
         dvar_dB = elementwise_deriv * dHdB
-        # dvar_dB = derivH * dHdB;
         # w.r.t. Sig
         dEosq_dSig = 1.0 / len(batch) * dEosq_dSig
         dWdSig = sumDerivSol_Sig / len(batch)
@@ -817,19 +754,8 @@ class SROMAeroS(SROMBase):
         fluctuation_std = ot.wasserstein_1d(time_wassInput,time_wassInput,var_wassInput,std_ref_wassInput,p=2)
         cost_mean = np.sum(self.coeff_mean*fluctuation_mean)
         cost_std = np.sum(self.coeff_std*fluctuation_std)
-        #with open('testx.npy', 'wb') as f:
-        #  np.save(f, norm_expectancy)
-        #  np.save(f, norm_var)
-        #  np.save(f, time_wassInput)
-        #  np.save(f, mean_ref_wassInput)
-        #  np.save(f, std_ref_wassInput)
-        #  np.save(f, var_wassInput)
-        #  np.save(f, fluctuation_mean)
-        #  np.save(f, fluctuation_std)
-        #  np.save(f, cost_mean)
-        #  np.save(f, cost_std)
-  
-        if self.problemParameters.derivativeFlag:
+        
+        if self.problemParameters.derivative_flag:
           time_wassInput_wgrad = torch.tensor(time_wassInput)
           norm_expectancy_wgrad = np.array(preProcessWasserstein(expectancy_sgd, mean_shift=self.shift)[0])
           norm_var_wgrad = np.array(preProcessWasserstein(var_sgd, mean_shift = 0)[0])
@@ -837,7 +763,6 @@ class SROMAeroS(SROMBase):
           mean_ref_wassInput_wgrad = torch.tensor(mean_ref_wassInput) 
           std_ref_wassInput_wgrad = torch.tensor(std_ref_wassInput) 
           var_wassInput_wgrad = torch.tensor(norm_var_wgrad.T).requires_grad_(True)
-          # for correct results wasserstein_1d input should be of dim tau x dof 
           fluctuation_mean_wgrad = ot.wasserstein_1d(time_wassInput_wgrad,time_wassInput_wgrad,expectancy_wassInput_wgrad,mean_ref_wassInput_wgrad,p=2) 
           fluctuation_std_wgrad = ot.wasserstein_1d(time_wassInput_wgrad,time_wassInput_wgrad,var_wassInput_wgrad,std_ref_wassInput_wgrad,p=2) 
         
@@ -845,8 +770,7 @@ class SROMAeroS(SROMBase):
           dWassdNormVar = torch.autograd.grad(fluctuation_std_wgrad, var_wassInput_wgrad, torch.ones_like(fluctuation_std_wgrad))[0]
           dNormExpdExp = np.array(jacfwd(preProcessWasserstein, argnums=0)(expectancy_sgd, mean_shift = self.shift)[0])
           dNormVardVar = np.array(jacfwd(preProcessWasserstein, argnums=0)(var_sgd)[0]) 
-          ### size of dwassdnormexp = tau x dof 
-  	  ### size of nnormdvar : can be reshaped to tau x tau x dof
+    
           dWassdExp = np.zeros(dWassdNormExp.T.shape)
           dWassdVar = np.zeros(dWassdNormVar.T.shape)
           for pdof in range(expectancy.shape[0]):       
@@ -857,12 +781,9 @@ class SROMAeroS(SROMBase):
   
       # Compute the mean and variance cost associated with this parameter point
       Cost_mean = Cost_mean + cost_mean
-      #np.sum((self.mean_ref[:,:,i] - expectancy) ** 2, axis = (0, 1))
-      print('Scaled Cost_mean: ', Cost_mean / self.coeff_mean)
       Cost_variance = Cost_variance + cost_std
-      #np.sum((self.std_ref[:, :, i] - var) ** 2, axis = (0, 1))
 
-      if self.problemParameters.derivativeFlag:
+      if self.problemParameters.derivative_flag:
         if distance_metric == "wasserstein":
           meanderivative_term_s = meanderivative_term_s + np.sum(self.coeff_mean * dWassdExp * dWds, axis = (0,1))
           stdevderivative_term_s = stdevderivative_term_s + np.sum(self.coeff_std * dWassdVar * dvar_ds, axis = (0,1))
@@ -876,7 +797,6 @@ class SROMAeroS(SROMBase):
            np.tile(np.expand_dims(self.coeff_std * dWassdVar, axis=2), (1,1,nbsigma)) * dvar_dSig, axis = (0, 1))
 
         else:
-          #RT - modifications from sgd
           # w.r.t s
           meanderivative_term_s = meanderivative_term_s + np.sum(
                  -2.0 * self.coeff_mean * (self.mean_ref[:,:,i] - expectancy_sgd) * dWds, axis = (0, 1))
@@ -895,18 +815,15 @@ class SROMAeroS(SROMBase):
              np.tile(np.expand_dims(-2.0 * self.coeff_std * (self.std_ref[:,:,i] - var_sgd), axis=2), (1,1,nbsigma)) * dvar_dSig, axis = (0, 1))
   
     print('Mean computation time: ', time.time() - tmean)
-    #print('Error for the mean is: %.17e' % np.sqrt(Cost_mean/self.coeff_mean))
     print('Cost variance: ', Cost_variance, '  Cost_mean: ', Cost_mean)
     print('Scaled Cost variance: ', Cost_variance/self.coeff_std,
         '  Scaled Cost_mean: ', Cost_mean/self.coeff_mean, flush = True)
 
     J = Cost_mean + Cost_variance
-    if compositeCostFlag:
-      J += self.w_p * np.linalg.norm(expOrthProj, 'fro')**2
-    #print('Cost variance: ', Cost_variance, '  Cost_mean: ', Cost_mean, 
-    #       flush = True)
+    if composite_cost_flag:
+      J += self.w_p * np.linalg.norm(exp_orth_proj, 'fro')**2
   
-    if self.problemParameters.derivativeFlag:
+    if self.problemParameters.derivative_flag:
   
       # Component-wise
       # w.r.t s
@@ -924,7 +841,7 @@ class SROMAeroS(SROMBase):
       dJstdev_dSig = stdevderivative_term_Sig
       dJ_dSig = dJmean_dSig + dJstdev_dSig
 
-      if compositeCostFlag:
+      if composite_cost_flag:
         dJ_ds += self.w_p * dOrthds
         dJ_dB += self.w_p * dOrthdB
         dJ_dSig += self.w_p * dOrthdSig
@@ -943,15 +860,13 @@ class SROMAeroS(SROMBase):
   ##############################################################################
   # Creates and runs realizations of the stochastic ROM
   def makeAndRunRealizations(self, sigma, s, beta, batch):
-    #RT x, Dof,Regular, V, B, R in problemParameters
-    #RT runParameters, problemParameters, IOParameters, Gparams part of object
-  
-    #parallelFlag = True
-    parallelFlag = False
+ 
+     parallelFlag = True
     if parallelFlag:
       nj = int(self.runParameters.ncores_per_node/2)
     else:
       nj = 1
+
     # This function parallelizes the computation of ROB realizations and then
     # runs the corresponding ROMs concurrently using Aero-s in the shared memory 
     # filesystems (/dev/shm)  of the compute nodes to minimize I/O bottlenecks;
@@ -978,10 +893,10 @@ class SROMAeroS(SROMBase):
     # ROM/Aero-S parameters
     # problemParameters - structure with problem dependent data/parameters
     # problemParameters.m_mu - number of parameter points where the SROM is evaluated
-    # problemParameters.raydamp - Rayleigh damping coefficients
-    # problemParameters.hyperFlag - use-hyperreduction flag
-    # problemParameters.sampledFlag - using V on a sampled mesh only
-    # problemParmameters.K,problemData.M - cell arrays of stiffness and mass matrices (only for problemData.sampledFlag==true)
+    # problemParameters.rayleigh_damping - Rayleigh damping coefficients
+    # problemParameters.hyperreduction_flag - use-hyperreduction flag
+    # problemParameters.sampled_mesh_flag - using V on a sampled mesh only
+    # problemParmameters.K,problemData.M - cell arrays of stiffness and mass matrices (only for problemData.sampled_mesh_flag==true)
     # problemParameters.uncdof - unconstrained degrees of freedom
     # problemParameters.probed_dofs - dofs needed for the computation of QoIs
     # problemParameters.N_sim - number of realizations per each parameter point
@@ -990,7 +905,7 @@ class SROMAeroS(SROMBase):
     # sol - array that stores the solutions at the probed dofs
     
     # Determine probed degrees of freedom (whether on sampled or full mesh)
-    if not self.problemParameters.sampledFlag:
+    if not self.problemParameters.sampled_mesh_flag:
       probed_dofs = np.copy(self.problemParameters.probed_dofs)
     else:
       probed_dofs = np.copy(self.problemParameters.probed_dofs_s)
@@ -1001,30 +916,29 @@ class SROMAeroS(SROMBase):
   
     f_unc = 0
     y_0_unc = 0
-    if self.problemParameters.derivativeFlag and \
-       self.problemParameters.linearFlag:
+    if self.problemParameters.derivative_flag and \
+       self.problemParameters.linear_flag:
       f_unc = self.problemParameters.f[self.problemParameters.uncdof]
       y_0_unc = self.problemParameters.y_0[self.problemParameters.uncdof]
     
     tinit = time.time()
+
     # Create unique directory to store files for the SROM realizations
     nodep = NodeProcessor(self.problemParameters.N_sim,
                           self.problemParameters.m_mu,
             self.runParameters.exec_nodes, self.runParameters.ncores_per_node,
-                       self.IOParameters.OutputID)
+                       self.IOParameters.output_ID)
     root, proot, croot2 = nodep.getDirs()
     
-    # Generate SROB realizations (in parallel on the local node)
+    # Generate SROB_dir realizations (in parallel on the local node)
     js = [j for j in range(self.problemParameters.N_sim)]
-    #for j in range(N_sim): 
-    #  res.append( makeSROM(j,
     res = Parallel(n_jobs = nj) \
                 (delayed(makeSROMAeroS)(j,
                self.problemParameters, self.IOParameters, self.Gparams, 
                self.ArrayRand1IDENT, self.ArrayRand2IDENT, sigma, s, beta,
                probed_dofs, root, proot, croot2, batch) for j in js)
     # Convert list to arrays
-    if self.problemParameters.derivativeFlag and len(batch) > 0:
+    if self.problemParameters.derivative_flag and len(batch) > 0:
       Vk_unc, Vk_probed, Vk_full, dVkds_unc, dVkdB_unc, dVkdSig_unc, \
       dVkds_probed, dVkdB_probed, dVkdSig_probed = convertParallelListToArray(
          res, (self.problemParameters.N_sim,))
@@ -1033,7 +947,6 @@ class SROMAeroS(SROMBase):
         (self.problemParameters.N_sim,))
       dVkds_unc = dVkdB_unc = dVkdSig_unc = dVkds_probed = dVkdB_probed = \
          dVkdSig_probed = np.array([])
-      #RT Wstored = Vk_probed
     print('SROM time: ', time.time() - tinit, flush = True)
   
     # Cleanup shared memory directories on the compute nodes
@@ -1048,27 +961,25 @@ class SROMAeroS(SROMBase):
         k = j * self.problemParameters.m_mu+ i
         croot = '%s/%d' % (root, k)
         filename = '%s/%s' % (croot, file_format(self.problemParameters.mu[i,:], 'dis'))
-        filename2 = '%s/%s.%d' % (self.IOParameters.OutputID,
-                                  self.IOParameters.OutputExactGrad, k)
-        derivativeFlag = len(np.nonzero(batch == j)[0]) > 0 and \
-                         self.problemParameters.derivativeFlag
-        data.append((i, j, filename, filename2, derivativeFlag))
-  
-    #sol_ = []
-    #for k in range(m_mu * N_sim): 
+        filename2 = '%s/%s.%d' % (self.IOParameters.output_ID,
+                                  self.IOParameters.exact_grad_output, k)
+        derivative_flag = len(np.nonzero(batch == j)[0]) > 0 and \
+                         self.problemParameters.derivative_flag
+        data.append((i, j, filename, filename2, derivative_flag))
+
     sol_ = Parallel(n_jobs = nj) \
           (delayed(postProAeroS)(
               datum[0], datum[1], datum[2], datum[3], datum[4],
-              self.problemParameters.linearFlag,
-              self.problemParameters.solStartI,
+              self.problemParameters.linear_flag,
+              self.problemParameters.sol_start_idx,
               Vk_probed,
               dVkds_unc, dVkdB_unc, dVkdSig_unc,
               dVkds_probed, dVkdB_probed, dVkdSig_probed, 
               self.Gparams.n, self.problemParameters.V.shape[0],
               self.problemParameters.uncdof)
            for datum in data)
-    # Convert list to array
-    if self.problemParameters.derivativeFlag and len(batch) > 0:
+
+    if self.problemParameters.derivative_flag and len(batch) > 0:
       sol, dVyds, dVydB, dVydSig = convertParallelListToArray(sol_, \
         (self.problemParameters.m_mu, self.problemParameters.N_sim))
     else:
@@ -1079,11 +990,8 @@ class SROMAeroS(SROMBase):
     os.system('rm -rf %s' % root)
     print('Post-pro time: ', time.time() - tpost, flush = True)
   
-    if not self.problemParameters.derivativeFlag or len(batch) == 0:
-      # #RT - from latest MJ's version
-      #return sol, [], [], []
+    if not self.problemParameters.derivative_flag or len(batch) == 0:
       return sol, [], [], [], Vk_unc, [], [], []
     else:
-      #return sol, dVyds, dVydB, dVydSig
       return sol, dVyds, dVydB, dVydSig, Vk_unc, dVkds_unc, dVkdB_unc, dVkdSig_unc
 ################################################################################
