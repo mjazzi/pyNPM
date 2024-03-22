@@ -4,7 +4,7 @@
 pyNPM is a Python driver that implements the non-parametric probabilistic method, including the generation of stochastic Reduced Order Models, and the solution of the hyperparameter identification inverse problem for computational problems solved with solvers from the Aero-Suite (https://bitbucket.org/frg/workspace/repositories/).
 
 ## Directory Structure
-*Main driver* 
+*Main driver scripts* 
 - **source.d/**: Contains the main scripts to build the random matrices, interface with Aero-S, launch the simulations, and perform hyperparameter optimization. *(not problem specific)*
 
 *Problem-specific subdirectories, need to create problem instance and run* 
