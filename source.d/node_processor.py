@@ -1,3 +1,8 @@
+################################################################################
+# Helper functions that facilitate the parallelizaition and distribution of jobs 
+# across the compute nodes in a shared memory system
+################################################################################
+
 import numpy as np
 import time
 import os
