@@ -9,7 +9,7 @@ from scipy.io import mmread, loadmat
 from scipy.optimize import minimize, Bounds, basinhopping, brute
 from matplotlib import pyplot as plt
 
-from NodeProcessor import NodeProcessor
+from node_processor import NodeProcessor
 from npm import GtoW2, generateG
 from aeros_utils import file_format, new_read_dydv_files, referenceValues, readROBPlus
 
