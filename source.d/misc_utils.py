@@ -7,9 +7,18 @@ import numpy as np
 import scipy.stats
 
 ################################################################################
-# Pre-process data for wasserstein distance: 
-#   find scaling constant c and normalize	
 def preProcessWasserstein(mean_ref, std_ref=np.array([]), mean_shift=None): 
+  """
+  Pre-process data for Wasserstein distance: find scaling constant c and normalize.
+
+  Parameters:
+  mean_ref (array-like): The mean reference values.
+  std_ref (array-like, optional): The standard deviation reference values. Defaults to an empty array.
+  mean_shift (float, optional): The mean shift value. Defaults to None.
+
+  Returns:
+  tuple: The normalized mean reference values, the normalized standard deviation reference values, and the mean shift.
+  """
   try:
     import jax.numpy as jnp 
     if not(mean_shift): 
@@ -29,11 +38,19 @@ def preProcessWasserstein(mean_ref, std_ref=np.array([]), mean_shift=None):
   except ImportError:
     print('Module jax.numpy is not available - aborting.')
     exit()
-
-                                     
-################################################################################
-# Obtain normalizing constants when using wasserstein distance 
+ 
 def computeWassersteinNormalizingConstants(norm_mean_ref, norm_std_ref, t):
+  """
+  Obtain normalizing constants when using Wasserstein distance.
+
+  Parameters:
+  norm_mean_ref (array-like): The normalized mean reference values.
+  norm_std_ref (array-like): The normalized standard deviation reference values.
+  t (array-like): The timestep values.
+
+  Returns:
+  tuple: The normalizing constants for the mean and standard deviation.
+  """
   try:
     import ot
     c_mean = np.zeros(norm_mean_ref.shape[0::2])
@@ -46,9 +63,17 @@ def computeWassersteinNormalizingConstants(norm_mean_ref, norm_std_ref, t):
     print('Module ot is not available - aborting.')
     exit()
 
-############################################################################### 
-# Automate width of target stdev intervals 
 def computeFluctuations(signal_ref, rom_ref):
+  """
+  Automate width of target standard deviation intervals.
+
+  Parameters:
+  signal_ref (array-like): The signal reference values.
+  rom_ref (array-like): The ROM reference values.
+
+  Returns:
+  tuple: The sigma values and a quality flag indicating the succesful non-negative shigt.
+  """
   N = signal_ref.shape[0]
   sigma = np.zeros(signal_ref.shape)
   qualityFlag = True

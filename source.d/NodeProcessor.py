@@ -4,9 +4,23 @@ import os
 import multiprocessing
 from joblib import Parallel, delayed
 
-################################################################################
 class NodeProcessor:
+  """
+  This class is responsible for processing nodes in a distributed computing environment.
+  It handles tasks such as creating directories for storing files, cleaning up temporary files,
+  transferring and running jobs on compute nodes.
+  """
   def __init__(self, _N_sim, _m_mu, _exec_nodes, _ncores_per_node, _oid):
+    """
+    Initialize the NodeProcessor with the given parameters.
+
+    Parameters:
+    _N_sim (int): The number of simulations.
+    _m_mu (int): The number of mu values.
+    _exec_nodes (list): The list of execution nodes.
+    _ncores_per_node (int): The number of cores per node.
+    _oid (str): The object id.
+    """
     self.N_sim = _N_sim
     self.m_mu = _m_mu
     self.exec_nodes = _exec_nodes
@@ -25,20 +39,34 @@ class NodeProcessor:
   
     os.system('mkdir %s' % (self.root) )
 
-  ##############################################################################
-  # Return directories where batch jobs will be written
   def getDirs(self):
+    """
+    Return directories where batch jobs will be written.
+
+    Returns:
+    tuple: The root directory, the parent root directory, and the relative location of files on a compute node.
+    """
     return self.root, self.proot, self.croot2
 
-  ##############################################################################
-  # Cleanup temporary files on the compute node
   def cleanNode(self, node):
+    """
+    Cleanup temporary files on the compute node.
+
+    Parameters:
+    node (str): The node to clean.
+    """
     command = 'ssh -o ForwardX11=no %s "rm -rf /dev/shm/shrom*"' % node
     os.system(command)
 
-  ##############################################################################
-  # Transfer and run jobs on the compute nodes
+
   def runJobs(self, parallelFlag, batch):
+    """
+    Transfer and run jobs on the compute nodes.
+
+    Parameters:
+    parallelFlag (bool): If True, run jobs in parallel.
+    batch (list): The list of jobs to run.
+    """
     # Cleanup shared memory directories on the compute nodes
     tcleanup = time.time()
     n_compute_nodes = len(self.exec_nodes)

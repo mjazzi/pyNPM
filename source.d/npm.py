@@ -5,42 +5,69 @@
 import numpy as np
 from scipy.linalg import fractional_matrix_power
 
-################################################################################
-# Compute W from G and the hyperparameters
 def GtoW2(G, sigma, s, V, B, dGdB = []):
+    """
+    This function computes the SROB W from the random matrix G and the hyperparameters.
 
-  if dGdB != []:
-    U = G @ sigma
-    # A = U -  B * (B.' * U);
-    Temp = V.T @ U
-    D = 0.5 * (Temp + Temp.T)
-    Z = U - V @ D
-   
-    Norm = np.identity(Z.shape[1]) + s * s * Z.T @ Z
-    H = fractional_matrix_power(Norm, -1.0/2.0) 
-    W = (V + s * Z) @ H
-   
-    dVds, dVdB, dVdSig = deriv_v_a(V, Z, sigma, s, G, dGdB, B)
-    return W, dVds, dVdB, dVdSig
+    Parameters:
+    G (array-like): input random matrix (discretized random fields).
+    sigma (array-like): The sigma values.
+    s (float): The s value.
+    V (array-like): The deterministic basis.
+    B (array-like): The constraints matrix.
+    dGdB (array-like, optional): The derivative of G with respect to beta. Defaults to an empty list.
 
-  else:
-    U = G @ sigma
-    A = U - B @ (B.T @ U)
-    Temp = V.T @ A 
-    D = 0.5 * (Temp + Temp.T)
-    Z = A - V @ D
-   
-    Norm = np.identity(Z.shape[1]) + s * s * Z.T @ Z
-    Eigen, MatPhi = np.linalg.eigh(Norm)
-    Eigm12 = np.diag(1.0 / np.sqrt(Eigen))
-   
-    H = (MatPhi @ Eigm12) @ MatPhi.T
-    return  (V + s * Z) @ H
+    Returns:
+    W (array-like): The computed SROB.
+    dVds (array-like, optional): The derivative of V with respect to s. Only returned if dGdB is not empty.
+    dVdB (array-like, optional): The derivative of V with respect to beta. Only returned if dGdB is not empty.
+    dVdSig (array-like, optional): The derivative of V with respect to sigma. Only returned if dGdB is not empty.
+    """
+    if dGdB != []:
+        U = G @ sigma
+        Temp = V.T @ U
+        D = 0.5 * (Temp + Temp.T)
+        Z = U - V @ D
 
-################################################################################
-# Generate random G
+        Norm = np.identity(Z.shape[1]) + s * s * Z.T @ Z
+        H = fractional_matrix_power(Norm, -1.0/2.0) 
+        W = (V + s * Z) @ H
+
+        dVds, dVdB, dVdSig = deriv_v_a(V, Z, sigma, s, G, dGdB, B)
+        return W, dVds, dVdB, dVdSig
+
+    else:
+        U = G @ sigma
+        A = U - B @ (B.T @ U)
+        Temp = V.T @ A 
+        D = 0.5 * (Temp + Temp.T)
+        Z = A - V @ D
+
+        Norm = np.identity(Z.shape[1]) + s * s * Z.T @ Z
+        Eigen, MatPhi = np.linalg.eigh(Norm)
+        Eigm12 = np.diag(1.0 / np.sqrt(Eigen))
+
+        H = (MatPhi @ Eigm12) @ MatPhi.T
+        return  (V + s * Z) @ H
+
 def generateG(Gparams, beta,  x, Dof, Regular, ArrayRand1IDENTell,ArrayRand2IDENTell, derivFlag = False):
+  """
+  This function generates the random matrix G using the hyperparameter beta 
 
+  Parameters:
+  Gparams (object): An object containing the parameters for the G matrix.
+  beta (float): The beta hyperparameter 
+  x (array-like): The mesh coordinates 
+  Dof (array-like): The degrees of freedom numbering 
+  Regular (float): The regularization parameter for the G matrix.
+  ArrayRand1IDENTell (array-like): The first array of random values for the G matrix.
+  ArrayRand2IDENTell (array-like): The second array of random values for the G matrix.
+  derivFlag (bool, optional): A flag indicating whether to compute the derivative of G. Defaults to False.
+
+  Returns:
+  G (array-like): The generated G matrix.
+  dG (array-like, optional): The derivative of the G matrix with respect to beta. Only returned if derivFlag is True.
+  """
   N = Gparams.N
   N0 = Gparams.N0
   n = Gparams.n
@@ -136,47 +163,69 @@ def generateG(Gparams, beta,  x, Dof, Regular, ArrayRand1IDENTell,ArrayRand2IDEN
   else:
     return G
 
-################################################################################
 def deriv_IB_a(Z, s, dZda_B, dZda_Sig):
-  B = s * Z
-  
-  N, n = B.shape
-  
-  # Component-wise derivative 
+  """
+  This function computes the derivative of the IB matrix with respect to s, B, and Sigma.
 
+  Parameters:
+  Z (array-like): The Z matrix.
+  s (float): The s value.
+  dZda_B (array-like): The derivative of Z with respect to B.
+  dZda_Sig (array-like): The derivative of Z with respect to Sigma.
+
+  Returns:
+  dIBds (array-like): The derivative of the IB matrix with respect to s.
+  dIBdB (array-like): The derivative of the IB matrix with respect to B.
+  dIBdSig (array-like): The derivative of the IB matrix with respect to Sigma.
+  """
+  B = s * Z
+
+  N, n = B.shape
+
+  # Component-wise derivative 
   dIBds = 2 * s * (Z.T @ Z)
   dZdB = dZda_B
   dIBdB = s**2 * (dZdB.T @ Z + Z.T @ dZdB);
   dZdSig=dZda_Sig
   n_sigma = int((n * (n + 1)) / 2)
   A1 = np.reshape(Z.T @ np.reshape(dZdSig, (N, n * n_sigma), order = 'F'),
-                  (n, n, n_sigma), order = 'F')
+          (n, n, n_sigma), order = 'F')
   A1 = np.transpose(A1, (1, 0, 2))
   A2 = np.reshape(Z.T @ np.reshape(dZdSig, (N, n*n_sigma), order = 'F'),
-                  (n, n, n_sigma), order = 'F')
+          (n, n, n_sigma), order = 'F')
   dIBdSig = s**2 * (A1 + A2)
-  
-  return dIBds, dIBdB, dIBdSig
-  
 
-################################################################################
+  return dIBds, dIBdB, dIBdSig
+
 def deriv_z_a(V, sigma, G, dGdB):
-  
+  """
+  This function computes the derivative of Z with respect to B and Sigma.
+
+  Parameters:
+  V (array-like): The V matrix.
+  sigma (array-like): The sigma values.
+  G (array-like): The G matrix.
+  dGdB (array-like): The derivative of G with respect to B.
+
+  Returns:
+  dZda_B (array-like): The derivative of Z with respect to B.
+  dZda_Sig (array-like): The derivative of Z with respect to Sigma.
+  """
   N, n = G.shape
-  
+
   # Component-wise derivatives
   dUdB = dGdB @ sigma
-  
+
   dsigma_da = diffSigma(n)
   n_sigma = int(n * (n+1)) / 2
   dUdSig = np.einsum('ij,jkl->ikl', G, dsigma_da)
 
   dUtdSig = np.transpose(dUdSig, (1, 0, 2))
-  
+
   dUtdB= dUdB.T 
-  
+
   dZdB = dUdB -0.5 * V @ (V.T @ dUdB + dUtdB @ V)
-  
+
   dUtdSig_times_V = np.einsum('ij,jkl->ikl', V.T, dUdSig)
   dUtdSig_times_V = np.transpose(dUtdSig_times_V, (1, 0, 2))
 
@@ -187,11 +236,25 @@ def deriv_z_a(V, sigma, G, dGdB):
   dZda_Sig = dUdSig - 0.5 * temp1 - 0.5 * temp2
 
   dZda_B = dZdB
-  
-  
+
   return dZda_B, dZda_Sig
-################################################################################
+
 def deriv_sqinv(s, Z, dZda_B, dZda_Sig):
+  """
+  This function computes the derivative of the square inverse matrix with respect to s, B, and Sigma.
+
+  Parameters:
+  s (float): The s hyperparameter.
+  Z (array-like): The Z matrix.
+  dZda_B (array-like): The derivative of Z with respect to B.
+  dZda_Sig (array-like): The derivative of Z with respect to Sigma.
+
+  Returns:
+  dIBsq_ds (array-like): The derivative of the square inverse matrix with respect to s.
+  dIBsq_dB (array-like): The derivative of the square inverse matrix with respect to B.
+  dIBsq_dSig (array-like): The derivative of the square inverse matrix with respect to Sigma.
+  sqA (array-like): The square inverse matrix.
+  """
    
   n = Z.shape[1] 
   A = np.identity(Z.shape[1]) + s * s * Z.T @ Z
@@ -222,39 +285,61 @@ def deriv_sqinv(s, Z, dZda_B, dZda_Sig):
 
   return dIBsq_ds, dIBsq_dB, dIBsq_dSig, sqA
 
-################################################################################
 def deriv_v_a(V, Z, sigma, s, G, dGdB, B):
+    """
+    This function computes the derivative of V with respect to s, B, and Sigma.
 
-  N, n = V.shape
+    Parameters:
+    V (array-like): The deterministic basis.
+    Z (array-like): The Z matrix.
+    sigma (array-like): The sigma values.
+    s (float): The s hyperparameter.
+    G (array-like): The G matrix.
+    dGdB (array-like): The derivative of G with respect to beta.
+    B (array-like): The B matrix.
 
-  dZda_B, dZda_Sig = deriv_z_a(V,sigma, G, dGdB)
-  
-  dIBsq_ds, dIBsq_dB, dIBsq_dSig, sqA = deriv_sqinv(s, Z, dZda_B, dZda_Sig)
-  
-  
-  # Component-wise derivatives 
-  dvsz_ds = Z
-  dvsz_dB = s * dZda_B
-  dvsz_dSig = s * dZda_Sig
-  
-  dVds = dvsz_ds @ sqA + (V + s*Z) @ dIBsq_ds
+    Returns:
+    dVds (array-like): The derivative of V with respect to s.
+    dVdB (array-like): The derivative of V with respect to beta.
+    dVdSig (array-like): The derivative of V with respect to Sigma.
+    """
+    N, n = V.shape
 
-  dVdB = dvsz_dB @ sqA + (V + s*Z) @ dIBsq_dB; 
-
-  n_sigma = (n * (n+1)) / 2
-  dVdSig = np.einsum('ikm,kj->ijm', dvsz_dSig, sqA) + \
-           np.einsum('ik,kjm->ijm', V + s * Z, dIBsq_dSig)
+    dZda_B, dZda_Sig = deriv_z_a(V,sigma, G, dGdB)
   
-  return dVds, dVdB, dVdSig
-   
-################################################################################
+    dIBsq_ds, dIBsq_dB, dIBsq_dSig, sqA = deriv_sqinv(s, Z, dZda_B, dZda_Sig)
+  
+  
+    # Component-wise derivatives 
+    dvsz_ds = Z
+    dvsz_dB = s * dZda_B
+    dvsz_dSig = s * dZda_Sig
+  
+    dVds = dvsz_ds @ sqA + (V + s*Z) @ dIBsq_ds
+
+    dVdB = dvsz_dB @ sqA + (V + s*Z) @ dIBsq_dB; 
+
+    n_sigma = (n * (n+1)) / 2
+    dVdSig = np.einsum('ikm,kj->ijm', dvsz_dSig, sqA) + \
+        np.einsum('ik,kjm->ijm', V + s * Z, dIBsq_dSig)
+  
+    return dVds, dVdB, dVdSig
+
 def diffSigma(n):
+    """
+    This function computes the derivative of Sigma.
 
-  size_alpha = int(n * (n + 1) / 2 + 2)
-  dsigma_da = np.zeros((n, n, int(n * (n + 1) / 2)))
-  k = 0
-  for i in range(n):
-    for j in range(i,n):
-      dsigma_da[i, j, k] = 1
-      k = k + 1
-  return dsigma_da
+    Parameters:
+    n (int): The size of the Sigma matrix.
+
+    Returns:
+    dsigma_da (array-like): The derivative of Sigma.
+    """
+    size_alpha = int(n * (n + 1) / 2 + 2)
+    dsigma_da = np.zeros((n, n, int(n * (n + 1) / 2)))
+    k = 0
+    for i in range(n):
+        for j in range(i,n):
+            dsigma_da[i, j, k] = 1
+            k = k + 1
+    return dsigma_da

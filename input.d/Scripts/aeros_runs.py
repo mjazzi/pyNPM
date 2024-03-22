@@ -4,108 +4,112 @@
 
 from aeros_utils import file_format
 
-################################################################################
-def solverSetup(modelType,outputFile, pathMFTT, rayleigh_damping, nonLinTol):
-  
-  f = open(outputFile, 'w')
-  
-  f.write('STATICS\n')
-  
-  if modelType == 1:
-    f.write('sparse\n')
-  elif modelType == 2 or modelType == 3 or modelType == 6:
-    f.write('eisgal\n')
-  elif modelType == 4:
-    f.write('mumps\n')
-  f.write('*\n');
-  
-  f.write('DYNAMICS\n')
-  if modelType !=4:
-    f.write('newmark\n')
-    f.write('mech 0.25 0.5 0.0 0.0\n')
-    f.write('time 0.0 1.8e-4 0.036\n')
-  f.write('rayleigh_damping %e %e\n' % (rayleigh_damping[0], rayleigh_damping[1]))
-  if modelType !=1 and  modelType != 5 and modelType != 6:
-     f.write('srom 0\n')
-  f.write('*\n')
-  f.write('MFTT\n')
-  fm = open(pathMFTT, 'r')
-  for line in fm:
-    f.write('%s' % line)
-  fm.close()
-  f.write('*\n')
-  
-  if (modelType != 4 and modelType !=5):
-    f.write('NONLINEAR\nunsymmetric\nnltol %e\nrebuild 1\nmaxit 25\n*\n' %
-       nonLinTol)
-  if (modelType == 1):
-    f.write('nltol 1e-8\n*\n')
-  
-  f.close() 
-  return
+def solverSetup(modelType, outputFile, pathMFTT, rayleigh_damping, nonLinTol):
+  """
+  Set up the solver by writing the necessary configurations to the output file.
 
-################################################################################
+  Parameters:
+  modelType (int): The type of the model.
+  outputFile (str): The path to the output file.
+  pathMFTT (str): The path to the MFTT file.
+  rayleigh_damping (list): The Rayleigh damping parameters.
+  nonLinTol (float): The non-linear tolerance.
+  """
+  with open(outputFile, 'w') as f:
+    f.write('STATICS\n')
+    f.write({
+      1: 'sparse\n',
+      2: 'eisgal\n',
+      3: 'eisgal\n',
+      4: 'mumps\n',
+      6: 'eisgal\n'
+    }.get(modelType, ''))
+    f.write('*\n')
+    f.write('DYNAMICS\n')
+    if modelType != 4:
+      f.write('newmark\nmech 0.25 0.5 0.0 0.0\ntime 0.0 1.8e-4 0.036\n')
+    f.write(f'rayleigh_damping {rayleigh_damping[0]} {rayleigh_damping[1]}\n')
+    if modelType not in [1, 5, 6]:
+      f.write('srom 0\n')
+    f.write('*\nMFTT\n')
+    with open(pathMFTT, 'r') as fm:
+      for line in fm:
+        f.write(line)
+    f.write('*\n')
+    if modelType not in [4, 5]:
+      f.write(f'NONLINEAR\nunsymmetric\nnltol {nonLinTol}\nrebuild 1\nmaxit 25\n*\n')
+    if modelType == 1:
+      f.write('nltol 1e-8\n*\n')
+
 def includeProperties(input_, output_):
+  """
+  Include properties from the input file to the output file.
 
-  f = open(output, 'a')
-  
-  
-  f.write('INCLUDE "%s/GEOMETRY.txt"\n' % input_)
-  f.write('*\n')
-  f.write('INCLUDE "%s/TOPOLOGY.txt"\n' % input_)
-  f.write('*\n')
-  f.write('INCLUDE "%s/DISPLACEMENTS.txt"\n' % input_)
-  f.write('*\n')
-  f.write('INCLUDE "%s/PRESSURES.txt"\n' % input_)
-  f.write('*\n')
-  f.write('INCLUDE "%s/MATERIAL.txt"\n' % input_)
-  f.write('*\n')
-  f.write('INCLUDE "%s/ATTRIBUTES.txt"\n' % input_)
-  f.write('*\n')
-  f.write('END\n')
-  
-  f.close()
+  Parameters:
+  input_ (str): The path to the input file.
+  output_ (str): The path to the output file.
+  """
+  with open(output_, 'a') as f:
+    for prop in ['GEOMETRY.txt', 'TOPOLOGY.txt', 'DISPLACEMENTS.txt', 'PRESSURES.txt', 'MATERIAL.txt', 'ATTRIBUTES.txt']:
+      f.write(f'INCLUDE "{input_}/{prop}"\n*\n')
+    f.write('END\n')
 
-################################################################################
-def aeros_buildROM(parameterPoint, problemParameters, IOParameters, paths = []):
-  print('aeros_buildROM has not been defined for this problem', flush = True)
-  return
+def aeros_buildROM(parameterPoint, problemParameters, IOParameters, paths=[]):
+  """
+  Build the ROM for the Aero-S problem.
 
-################################################################################
-def aeros_buildHROM(parameterPoint, problemParameters, IOParameters,
-                    outputGradFlag, k, paths = []):
+  Parameters:
+  parameterPoint (array-like): The parameter point values.
+  problemParameters (object): An object containing problem parameters.
+  IOParameters (object): An object containing input/output parameters.
+  paths (list): A list of paths.
 
+  Note:
+  This function has not been defined for this problem.
+  """
+  print('aeros_buildROM has not been defined for this problem', flush=True)
+
+def aeros_buildHROM(parameterPoint, problemParameters, IOParameters, outputGradFlag, k, paths=[]):
+  """
+  Build the HROM for the Aero-S problem.
+
+  Parameters:
+  parameterPoint (array-like): The parameter point values.
+  problemParameters (object): An object containing problem parameters.
+  IOParameters (object): An object containing input/output parameters.
+  outputGradFlag (bool): A flag indicating whether to output gradients.
+  k (int): An integer parameter.
+  paths (list): A list of paths.
+  """
   if paths:
-    pathOutput = '%s/%s' % (paths[1], IOParameters.HROM_output)
+    pathOutput = f'{paths[1]}/{IOParameters.HROM_output}'
     pathResults = paths[2]
-    pathMesh =  paths[2]
-    pathInput = '%s/%s/%s' % (paths[0], IOParameters.input_ID,IOParameters.input_dir)
-    pathMFTT = '%s/%s/%s' % (paths[0], IOParameters.input_ID, IOParameters.MFTT)
+    pathMesh = paths[2]
+    pathInput = f'{paths[0]}/{IOParameters.input_ID}/{IOParameters.input_dir}'
+    pathMFTT = f'{paths[0]}/{IOParameters.input_ID}/{IOParameters.MFTT}'
   else:
-    pathResults= '%s/%s' % (IOParameters.output_ID, IOParameters.HROM_results_dir)
-    pathOutput= '%s/%s'% (IOParameters.output_ID, IOParameters.HROM_output)
-    pathMesh= '%s/%s' % (IOParameters.output_ID, IOParameters.Mesh)
-    pathMFTT= '%s/%s' % (IOParameters.input_ID, IOParameters.MFTT)
-    pathInput = '%s/%s' % (IOParameters.input_ID, IOParameters.input_dir)
+    pathResults = f'{IOParameters.output_ID}/{IOParameters.HROM_results_dir}'
+    pathOutput = f'{IOParameters.output_ID}/{IOParameters.HROM_output}'
+    pathMesh = f'{IOParameters.output_ID}/{IOParameters.Mesh}'
+    pathMFTT = f'{IOParameters.input_ID}/{IOParameters.MFTT}'
+    pathInput = f'{IOParameters.input_ID}/{IOParameters.input_dir}'
 
   file_dis = file_format(parameterPoint, 'dis')
   file_vel = file_format(parameterPoint, 'vel')
   file_acc = file_format(parameterPoint, 'acc')
 
   solverSetup(3, pathOutput, pathMFTT, problemParameters.rayleigh_damping, 1e-10)
-  f = open(pathOutput, 'a')
-  if outputGradFlag:
-    f.write('exactgrad\n');
+  with open(pathOutput, 'a') as f:
+    if outputGradFlag:
+      f.write('exactgrad\n*\n')
+    f.write('OUTPUT\n')
+    f.write(f'gdisplac 21 15 "{pathResults}/{file_dis}" 1\n')
+    f.write(f'gvelocit 21 15 "{pathResults}/{file_vel}" 1\n')
+    f.write(f'gacceler 21 15 "{pathResults}/{file_acc}" 1\n')
+    if outputGradFlag:
+      f.write(f'DispBasisSens 21 15 "{paths[0]}/{IOParameters.output_ID}/{IOParameters.exact_grad_output}.{k}" 1\n')
     f.write('*\n')
-  f.write('OUTPUT\n')
-  f.write('gdisplac 21 15 "%s/%s" 1\n' % (pathResults, file_dis))
-  f.write('gvelocit 21 15 "%s/%s" 1\n' % (pathResults, file_vel))
-  f.write('gacceler 21 15 "%s/%s" 1\n' % (pathResults, file_acc))
-  if outputGradFlag:
-    f.write('DispBasisSens 21 15 "%s/%s/%s.%d" 1\n' % (paths[0],IOParameters.output_ID,  IOParameters.exact_grad_output, k))
-  f.write('*\n')
-  f.write('INCLUDE "%s/samplmsh.new.elementmesh.inc"\n' % pathMesh)
-  f.write('*\n')
-  f.write('END\n')
-  f.close()
-  return
+    f.write(f'INCLUDE "{pathMesh}/samplmsh.new.elementmesh.inc"\n*\n')
+    f.write('END\n')
+from aeros_utils import file_format
+

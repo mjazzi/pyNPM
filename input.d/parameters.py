@@ -7,6 +7,7 @@ import os
 
 
 class ProblemParameters:
+  """Class to hold problem parameters."""
   linear_flag = 0
   rayleigh_damping = [0.0, 0.0]
   hyperreduction_flag = True
@@ -15,8 +16,8 @@ class ProblemParameters:
   n_dofs_per_node = 3
   probed_node_s = np.array([6, 17, 71, 165], dtype = int) - 1  # probed node numbers in sampled mesh numbering
   probed_node = np.array([593, 1891, 13769, 28977], dtype = int) - 1 # probed node number in full mesh numbering
-  probed_dofs = np.hstack((probed_node * 3 + 0, probed_node * 3 + 1, probed_node * 3 + 2))
-  probed_dofs_s = np.hstack((probed_node_s * n_dofs_per_node + 0, probed_node_s * n_dofs_per_node + 1, probed_node_s * n_dofs_per_node + 2))
+  probed_dofs = np.hstack((self.probed_node * 3 + i for i in range(3)))
+  probed_dofs_s = np.hstack((self.probed_node_s * self.n_dofs_per_node + i for i in range(3)))
   mu = np.array([[1.00, 1.00]]) # Observed location (for NPM) 
   m_mu = mu.shape[0]
   N_sim= 72 # number of MC realizations for computing the objective function
@@ -36,6 +37,7 @@ class ProblemParameters:
     self.K = []
 
 class GreedyParameters:
+  """Class to hold greedy parameters."""
   grid_size = 3
   max_ROB_points = 8
   residual_tol = 4.0e-1   
@@ -44,6 +46,7 @@ class GreedyParameters:
   upper_bound = [1.05, 1.05]
 
 class IOparameters:
+  """Class to hold input/output parameters."""
   base_dir = '%s/..' % os.getcwd()
   problem_ID = 0;
   input_ID = '../input%d.d' % problem_ID # Aero-S problem input location
@@ -93,6 +96,7 @@ class IOparameters:
   
 
 class StochasticParameters:
+  """Class to hold stochastic parameters."""
   s_0 = 1e-3
   beta_0 = 6
   diag_coef = 1.0
@@ -108,7 +112,8 @@ class StochasticParameters:
   weight_proj = 0.1
 
 
-class GParams: # as defined in Soize and Farhat, IJNME 2017 
+class GParams: 
+  """Class to hold GParams as defined in Soize and Farhat, IJNME 2017."""
   d = int(3)  # dimension of the computational domain
   m = int(3)  # dimension of the field discretized by FEM
   nu_p = int(20)
