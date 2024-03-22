@@ -32,6 +32,6 @@ To run the code:
     ```
 
 ## Additional Notes
-- Ensure the input#ID.d/ output#ID.d/ are created and populated before running the code, and most recent version of the aero-s and rob executables are linked within the input#ID.d/parameters.py file
+- Ensure the input#ID.d/ output#ID.d/ are created and populated before running the code, and most recent version of the aero-s and rob executables are linked within the input#ID.d/parameters.py file. Alternatively, copy the source.d/ subdirectory into a parent directory containing all problem specific input and output directories.  
 - Refer to the inline comments and documentation within the code for detailed usage instructions and customization options.
 - For any issues or questions, please contact mjazzi@stanford.edu
