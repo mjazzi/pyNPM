@@ -7,21 +7,21 @@ pyNPM is a Python driver that implements the non-parametric probabilistic method
 *Main driver scripts* 
 - **source.d/**: Contains the main scripts to build the random matrices, interface with Aero-S, launch the simulations, and perform hyperparameter optimization. *(not problem specific)*
 
-*Problem-specific subdirectories, need to create problem instance and run* 
+*Problem-specific subdirectories, needed to create problem instance and run* 
 - **input#ID.d/** 
   - **Input/**: Contains problem-specific solver input files.
   - **Scripts/**: Contains problem-specific functions for generating, modifying, and reading Aero-S input files (e.g., `aeros_runs.py`).
   - **parameters.py**: Contains the definitions of problem-dependent variables.
 
 - **output#ID.d/** 
-  - **Basis/**: Contains the Reduced Order Basis (ROB) files.
-  - **Mesh/**: Contains outputs from hyperreduction.
-  - **Results/**: Contains the probed reference results (e.g., HDM...).
+  - **Basis/**: Contains the Reduced Order Basis (ROB) files as output by Aero-S.
+  - **Mesh/**: Contains outputs from hyperreduction using Aero-S.
+  - **Results/**: Contains the probed reference results (e.g., HDM...) output using Aero-S.
 
 *Note: #ID is an identifier used to refer to specific problem instances.*
 
 *Subdirectory updated by code run* 
-- **executables/**: Contains copies of the Aero-S and ROB executables.
+- **executables/**: Contains copies of the Aero-S and rob executables.
 
 ## Usage
 
