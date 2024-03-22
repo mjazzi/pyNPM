@@ -1,215 +1,316 @@
-import numpy as np
 import os
 import sys
 import time
 import re
 import multiprocessing
+
 from joblib import Parallel, delayed
 from scipy.io import mmread, loadmat
 from scipy.optimize import minimize, Bounds, basinhopping, brute
-
 from matplotlib import pyplot as plt
 
 from NodeProcessor import NodeProcessor
 from npm import GtoW2, generateG
 from aeros_utils import file_format, new_read_dydv_files, referenceValues, readROBPlus
 
-################################################################################
-# Read PBS information to initialize the list of nodes and number of cores
+
 def getPBSInfo():
-  filename = os.getenv('PBS_NODEFILE')
-  if filename == None:
-    return 0, []
-  f = open(filename, 'r')
-  nodesn = a=f.readlines()
-  unodesn = list(set(nodesn))
-  unodes = []
-  for unoden in unodesn:
-    unodes.append(unoden.strip())
-  ppn = int(os.getenv('PBS_NUM_PPN'))
-  return ppn, unodes
+    """
+    Read PBS information from the environment to initialize the list of nodes and number of cores.
 
-################################################################################
-# Read SLURM information to initialize the list of nodes and number of cores
+    Returns:
+        ppn (int): The number of processing elements per node.
+        unodes (list): A list of unique nodes.
+    """
+    filename = os.getenv('PBS_NODEFILE')
+    if filename == None:
+        return 0, []
+    f = open(filename, 'r')
+    nodesn = a=f.readlines()
+    unodesn = list(set(nodesn))
+    unodes = []
+    for unoden in unodesn:
+        unodes.append(unoden.strip())
+    ppn = int(os.getenv('PBS_NUM_PPN'))
+    return ppn, unodes
+
 def getSLURMInfo():
-  unodes  = os.getenv('SLURM_JOB_NODELIST')
-  if unodes == None:
-    return 0, []
-  if isinstance(unodes, str):
-    nodes = [unodes]
-  else:
-    nodes = list(unodes)
-  nodenames=[]
-  for node in nodes:
-    if node.find('[')!=-1:
-      idx = node.find('[')
-      prefix = node[:idx]
-      numbers = re.findall(r'\d+',node[idx+1:-1])
-      a=re.findall(r'\d+-\d+',node[idx+1:-1])
-      if a:
-        for ran in a:
-          bounds = re.findall(r'\d+', ran)
-          interval = np.arange(int(ran[:2]), int(ran[-2:])+1)
-          for num in interval:
-            numbers+=[str(num).zfill(2)]
-          numbers = list(set(numbers))
-      for number in numbers:
-        nodenames += [(prefix + number)]
-    else:
-      nodenames+=[node]
-  ppn = int(os.getenv('SLURM_CPUS_ON_NODE'))
-  return ppn, nodenames
+    """
+    Read SLURM information from the environment to initialize the list of nodes and number of cores.
 
-################################################################################
-# Initialization of the hyperparameters and their bounds
+    Returns:
+        ppn (int): The number of processing elements per node.
+        nodenames (list): A list of node names.
+    """
+    unodes  = os.getenv('SLURM_JOB_NODELIST')
+    if unodes == None:
+        return 0, []
+    if isinstance(unodes, str):
+        nodes = [unodes]
+    else:
+        nodes = list(unodes)
+    nodenames=[]
+    for node in nodes:
+        if node.find('[')!=-1:
+            idx = node.find('[')
+            prefix = node[:idx]
+            numbers = re.findall(r'\d+',node[idx+1:-1])
+            a=re.findall(r'\d+-\d+',node[idx+1:-1])
+            if a:
+                for ran in a:
+                    bounds = re.findall(r'\d+', ran)
+                    interval = np.arange(int(ran[:2]), int(ran[-2:])+1)
+                    for num in interval:
+                        numbers+=[str(num).zfill(2)]
+                    numbers = list(set(numbers))
+            for number in numbers:
+                nodenames += [(prefix + number)]
+        else:
+            nodenames+=[node]
+    ppn = int(os.getenv('SLURM_CPUS_ON_NODE'))
+    return ppn, nodenames
+
 def initHyperParameters(Gparams, stochasticParameters):
+    """
+    Initialize the hyperparameters and their bounds.
 
-  # Initialization of the hyperparameters
-  s_0 = stochasticParameters.s_0
-  beta_0 = stochasticParameters.beta_0
-  m_sigma   = int(Gparams.n * (Gparams.n + 1) / 2) # hyperparameters of sigma
-  Rrow = np.zeros(m_sigma, dtype = int) # rows of the entries in sigma
-  Rcolumn = np.zeros(m_sigma, dtype = int) # columns of the entries in sigma
-  Rsigma_0 = np.zeros(m_sigma) # values of sigma stored in a vector
-  sigma_0_full = stochasticParameters.diag_coef * np.identity(Gparams.n)
-  nbsigma = m_sigma
-  ind = 0
-  for j in range(Gparams.n):
-    for k in range(j, Gparams.n):
-      Rrow[ind] = j
-      Rcolumn[ind] = k
-      Rsigma_0[ind] = sigma_0_full[j,k]
-      ind = ind + 1
-  
-  # Initialization of the hyperparameters vector alpha_0
-  m_alpha = nbsigma + 2
-  alpha_0 = np.zeros(m_alpha)
-  alpha_0[0:nbsigma] = Rsigma_0
-  alpha_0[nbsigma] = s_0
-  alpha_0[nbsigma+1] = beta_0
+    Args:
+        Gparams (object): An object containing the parameter related to the random G matrix.
+        stochasticParameters (object): An object containing the stochastic parameters.
 
-  # Initialization of the hyperparameter bounds
-  m_alpha = nbsigma + 2
-  lb = np.zeros(m_alpha)
-  ub = np.zeros(m_alpha)
-  diag_min = stochasticParameters.diag_min
-  extra_diag_min = stochasticParameters.extra_diag_min
-  diag_max = stochasticParameters.diag_max
-  extra_diag_max = stochasticParameters.extra_diag_max
-  for ind in range(nbsigma):
-    j = Rrow[ind]
-    k = Rcolumn[ind]
-    if j == k:
-      ll = diag_min
-      uu = diag_max
-    if j != k:
-      ll = extra_diag_min
-      uu = extra_diag_max
-    lb[ind] = ll
-    ub[ind] = uu
-  lb[nbsigma] = stochasticParameters.lb_s  
-  ub[nbsigma] = stochasticParameters.ub_s 
-  lb[nbsigma + 1] = stochasticParameters.lb_beta 
-  ub[nbsigma + 1] = stochasticParameters.ub_beta 
-  return Rrow, Rcolumn, alpha_0, lb, ub
+    Returns:
+        Rrow (numpy.ndarray): Rows of the entries in sigma.
+        Rcolumn (numpy.ndarray): Columns of the entries in sigma.
+        alpha_0 (numpy.ndarray): The initial hyperparameters vector.
+        lb (numpy.ndarray): The lower bounds of the hyperparameters.
+        ub (numpy.ndarray): The upper bounds of the hyperparameters.
+    """
+    # Initialization of the hyperparameters
+    s_0 = stochasticParameters.s_0
+    beta_0 = stochasticParameters.beta_0
+    m_sigma   = int(Gparams.n * (Gparams.n + 1) / 2) # hyperparameters of sigma
+    Rrow = np.zeros(m_sigma, dtype = int) # rows of the entries in sigma
+    Rcolumn = np.zeros(m_sigma, dtype = int) # columns of the entries in sigma
+    Rsigma_0 = np.zeros(m_sigma) # values of sigma stored in a vector
+    sigma_0_full = stochasticParameters.diag_coef * np.identity(Gparams.n)
+    nbsigma = m_sigma
+    ind = 0
+    for j in range(Gparams.n):
+        for k in range(j, Gparams.n):
+            Rrow[ind] = j
+            Rcolumn[ind] = k
+            Rsigma_0[ind] = sigma_0_full[j,k]
+            ind = ind + 1
 
-################################################################################
-# Initialization of the parameters of matrix G 
+    # Initialization of the hyperparameters vector alpha_0
+    m_alpha = nbsigma + 2
+    alpha_0 = np.zeros(m_alpha)
+    alpha_0[0:nbsigma] = Rsigma_0
+    alpha_0[nbsigma] = s_0
+    alpha_0[nbsigma+1] = beta_0
+
+    # Initialization of the hyperparameter bounds
+    m_alpha = nbsigma + 2
+    lb = np.zeros(m_alpha)
+    ub = np.zeros(m_alpha)
+    diag_min = stochasticParameters.diag_min
+    extra_diag_min = stochasticParameters.extra_diag_min
+    diag_max = stochasticParameters.diag_max
+    extra_diag_max = stochasticParameters.extra_diag_max
+    for ind in range(nbsigma):
+        j = Rrow[ind]
+        k = Rcolumn[ind]
+        if j == k:
+            ll = diag_min
+            uu = diag_max
+        if j != k:
+            ll = extra_diag_min
+            uu = extra_diag_max
+        lb[ind] = ll
+        ub[ind] = uu
+    lb[nbsigma] = stochasticParameters.lb_s  
+    ub[nbsigma] = stochasticParameters.ub_s 
+    lb[nbsigma + 1] = stochasticParameters.lb_beta 
+    ub[nbsigma + 1] = stochasticParameters.ub_beta 
+    return Rrow, Rcolumn, alpha_0, lb, ub
+
 def initGparams(Vshape, x,  Gparams):
-  # Initialize parameters needed for G (random matrix) - notation follows appendix D
-  # of Farhat and Soize (2017) 
-  Gparams.n = Vshape[1] 
-  Gparams.N0 = int(Vshape[0] / Gparams.m)  
-  Gparams.N = Gparams.m * Gparams.N0 
+    """
+    Initialize parameters needed for G (random matrix).
 
-  for i in range(Gparams.d):
-    Gparams.L[i] = np.ptp(x[:, i])
+    Args:
+        Vshape (tuple): Shape of the matrix V.
+        x (numpy.ndarray): Input data.
+        Gparams (object): An object containing the parameters of the random matrix G.
 
-  sum_nu = np.zeros(Gparams.nu_p)
-  for nu in range(Gparams.nu_p):
-    if Gparams.K_nu[nu] < 0:
-      kap = - Gparams.K_nu[nu]
-    else:
-      kap =  Gparams.K_nu[nu]
-    sum_nu[nu] = 2 * (1 - kap) / Gparams.nu_p
-  Gparams.R2sum_nu = np.sqrt(2 * sum_nu)
-  return Gparams
+    Returns:
+        Gparams (object): An object containing the updated parameters of the random matrix G.
+    """
+    Gparams.n = Vshape[1] 
+    Gparams.N0 = int(Vshape[0] / Gparams.m)  
+    Gparams.N = Gparams.m * Gparams.N0 
 
-################################################################################
-# Convert vector alpha into hyperparameters sigma, s, beta
+    for i in range(Gparams.d):
+        Gparams.L[i] = np.ptp(x[:, i])
+
+    sum_nu = np.zeros(Gparams.nu_p)
+    for nu in range(Gparams.nu_p):
+        if Gparams.K_nu[nu] < 0:
+            kap = - Gparams.K_nu[nu]
+        else:
+            kap =  Gparams.K_nu[nu]
+        sum_nu[nu] = 2 * (1 - kap) / Gparams.nu_p
+    Gparams.R2sum_nu = np.sqrt(2 * sum_nu)
+    return Gparams
+
 def alphaToHyperparameters(alpha, n, Rrow, Rcolumn):
-  nbsigma = len(Rrow)
-  sigma = np.zeros((n, n))
-  sigma[Rrow, Rcolumn] = alpha[0:nbsigma]
-  s     = alpha[nbsigma]
-  beta  = alpha[nbsigma+1]
-  return sigma, s, beta
+    """
+    Convert vector alpha into hyperparameters sigma, s, beta.
 
-################################################################################
+    Args:
+        alpha (numpy.ndarray): The alpha vector.
+        n (int): The reduced dimension of the problem, or dimension of the sigma matrix.
+        Rrow (numpy.ndarray): Rows of the entries in sigma.
+        Rcolumn (numpy.ndarray): Columns of the entries in sigma.
+
+    Returns:
+        sigma (numpy.ndarray): The sigma matrix.
+        s (float): The s hyperparameter.
+        beta (float): The beta hyperparameter.
+    """
+    nbsigma = len(Rrow)
+    sigma = np.zeros((n, n))
+    sigma[Rrow, Rcolumn] = alpha[0:nbsigma]
+    s     = alpha[nbsigma]
+    beta  = alpha[nbsigma+1]
+    return sigma, s, beta
+
 class RunParameters:
-  def __init__(self):
-    self.exec_nodes = [] # Names of nodes that have been allocated for the job
-    self.ncores_per_node = 0
-    # Read the PBS info to be used to run ROM realizations using Aero-s
-    self.ncores_per_node, self.exec_nodes = \
-      getPBSInfo()
-    if self.ncores_per_node == 0:
-      # Alternatively, read the Slurm info 
-      self.ncores_per_node, self.exec_nodes = \
-        getSLURMInfo()
- 
-################################################################################
-# Define an auxiliary object for the cost function optimization
+    """
+    A class used to represent the compute-node parameters for a run.
+
+    Attributes:
+        exec_nodes (list): Names of nodes that have been allocated for the job.
+        ncores_per_node (int): Number of cores per node.
+    """
+    def __init__(self):
+        self.exec_nodes = [] 
+        self.ncores_per_node = 0
+        self.ncores_per_node, self.exec_nodes = getPBSInfo()
+        if self.ncores_per_node == 0:
+            self.ncores_per_node, self.exec_nodes = getSLURMInfo()
+
 class ObjectiveF:
-  def __init__(self, N_sim, rng, costFunction):
-    self.N_sim = N_sim
-    self.rng = rng
-    self.costFunction = costFunction
-    self.counter = int(0)
-    self.batch_size = N_sim
+    """
+    A class used to represent the objective function for optimization.
 
-  def objective(self, alpha):
-    cycle = self.counter % (self.N_sim / self.batch_size)
-    batch = self.batches[np.arange(self.batch_size * cycle, \
-                         self.batch_size * (cycle+1), dtype = int)]
-    return self.costFunction(alpha, batch)
+    Attributes:
+        N_sim (int): The number of MC simulations.
+        rng (numpy.random.Generator): A random number generator.
+        costFunction (function): The cost function to be optimized.
+        counter (int): A counter for the number of iterations.
+        batch_size (int): The size of the batches for stochastic gradient descent.
+    """
+    def __init__(self, N_sim, rng, costFunction):
+        self.N_sim = N_sim
+        self.rng = rng
+        self.costFunction = costFunction
+        self.counter = int(0)
+        self.batch_size = N_sim
 
-  def callback(self, params):
-    print("Iteration %d" % self.counter)
-    print("alpha =  {}".format(params), flush = True)
-    return
+    def objective(self, alpha):
+        """
+        Calculate the objective function for a given alpha.
 
-  def setBatch(self, batch_size):
-    self.batch_size = batch_size
-    self.batches = self.rng.permutation(self.N_sim)
+        Args:
+            alpha (numpy.ndarray): The alpha vector.
+
+        Returns:
+            float: The value of the cost function for the given alpha.
+        """
+        cycle = self.counter % (self.N_sim / self.batch_size)
+        batch = self.batches[np.arange(self.batch_size * cycle, \
+                            self.batch_size * (cycle+1), dtype = int)]
+        return self.costFunction(alpha, batch)
+
+    def callback(self, params):
+        """
+        Print the current iteration and alpha.
+
+        Args:
+            params (numpy.ndarray): The current parameters.
+        """
+        print("Iteration %d" % self.counter)
+        print("alpha =  {}".format(params), flush = True)
+        return
+
+    def setBatch(self, batch_size):
+        """
+        Set the batch size and generate a new permutation of the simulations.
+
+        Args:
+            batch_size (int): The new batch size.
+        """
+        self.batch_size = batch_size
+        self.batches = self.rng.permutation(self.N_sim)
    
-  def callback_sgd(self, params):
-    print("Iteration %d" % self.counter)
-    print("alpha =  {}".format(params), flush = True)
-    self.counter = self.counter + 1
-    if self.counter % self.batch_size == 0:
-      # Reset batches
-      self.batches = self.rng.permutation(self.N_sim)
-    return
+    def callback_sgd(self, params):
+        """
+        Print the current iteration and alpha, and update the counter and batches for SGD.
 
-  def callback_sgd_tr(self, params, optim):
-    print("Iteration %d" % self.counter)
-    print("alpha =  {}".format(params), flush = True)
-    self.counter = self.counter + 1
-    if self.counter % self.batch_size == 0:
-      # Reset batches
-      self.batches = self.rng.permutation(self.N_sim)
-    return
+        Args:
+            params (numpy.ndarray): The current parameters.
+        """
+        print("Iteration %d" % self.counter)
+        print("alpha =  {}".format(params), flush = True)
+        self.counter = self.counter + 1
+        if self.counter % self.batch_size == 0:
+            self.batches = self.rng.permutation(self.N_sim)
+        return
 
-################################################################################
-# Cleanup temporary files on a compute node
+    def callback_sgd_tr(self, params, optim):
+        """
+        Print the current iteration and alpha, and update the counter and batches for SGD with trust region.
+
+        Args:
+            params (numpy.ndarray): The current parameters.
+            optim (object): The optimizer object.
+        """
+        print("Iteration %d" % self.counter)
+        print("alpha =  {}".format(params), flush = True)
+        self.counter = self.counter + 1
+        if self.counter % self.batch_size == 0:
+            self.batches = self.rng.permutation(self.N_sim)
+        return
+
 def cleanNode(node):
-  command = 'ssh -o ForwardX11=no %s "rm -rf /dev/shm/shrom*"' % node
-  os.system(command)
+    """
+    Cleanup temporary files on a compute node.
 
-################################################################################
-# Function to convert results of Parallel (list) to arrays 
+    Args:
+        node (str): The name of the node.
+    """
+    command = 'ssh -o ForwardX11=no %s "rm -rf /dev/shm/shrom*"' % node
+    os.system(command)
+
 def convertParallelListToArray(res, ixDim):
+  """
+  Converts the results of a Parallel operation from a list to an array.
+
+  This function takes in a list of results and a list of dimensions, and
+  converts the results into an array format. The length of the longest
+  sublist in the results determines the number of arrays to be created.
+  Each array will have a shape determined by the dimensions list and the shape
+  of the corresponding sublist in the results. The values in the arrays are
+  filled from the sublists in the results.
+
+  Parameters:
+  res (list): The results from a Parallel operation.
+  ixDim (list): The dimensions of the index.
+
+  Returns:
+  tuple: A tuple of arrays converted from the input list.
+  """
   ni = len(ixDim)
   na = 0
   for i in range(len(res)):
@@ -230,17 +331,40 @@ def convertParallelListToArray(res, ixDim):
       else:
         resA[ii][res[i][0], res[i][1]] = res[i][ii + ni]
   return tuple(resA)
-
-################################################################################
 class SROMBase:
+  """
+  Base class for Stochastic Reduced Order Models (SROM).
+
+  This class initializes the parameters for an SROM problem. It takes in a path
+  to a directory containing problem-specific input and output files, and initializes
+  various parameters from these files.
+
+  Attributes:
+  problemPath (str): Path to the directory containing problem-specific input and output files.
+  IOParameters (IOparameters): Input/output parameters for the problem.
+  problemParameters (ProblemParameters): Problem-specific parameters.
+  stochasticParameters (StochasticParameters): Stochastic parameters for the problem.
+  Gparams (GParams): Parameters for the G function.
+  runParameters (RunParameters): Parameters for the run.
+  """
 
   def __init__(self, problemPath):
+    """
+    Initializes the SROMBase with a path to the problem-specific files.
+
+    This method takes in a path to a directory containing problem-specific input
+    and output files. It appends this path to the system path, and then imports
+    and initializes various parameters from these files.
+
+    Parameters:
+    problemPath (str): Path to the directory containing problem-specific input and output files.
+    """
     # Specify directory that contain problem-specific input_dir and output files
     self.problemPath = problemPath
     sys.path.append(problemPath)
     # Initialize problem dependent parameters
     from parameters import ProblemParameters, IOparameters, \
-                           GParams, StochasticParameters
+                GParams, StochasticParameters
     self.IOParameters = IOparameters()
     self.problemParameters = ProblemParameters(self.IOParameters)
     self.stochasticParameters = StochasticParameters()
@@ -249,19 +373,42 @@ class SROMBase:
     self.runParameters = RunParameters()
     return
 
-################################################################################
-# Make SROM realizations and write the corresponding Aero-S input files
-# Standalone function as Parallel supposedly packages the whole object otherwise
 def makeSROMAeroS(j, problemParameters, IOParameters, Gparams, 
   ArrayRand1IDENT, ArrayRand2IDENT, sigma, s, beta, 
   probed_dofs, root, proot, croot2, batch):
+  """
+  Make SROM realizations and write the corresponding Aero-S input files.
 
+  This function generates SROM realizations based on the provided parameters
+  and writes the corresponding Aero-S input files. It also creates directories
+  for each realization and writes the SROM to a file. If the hyperreduction flag
+  is not set, it generates input files and a batch file to run them. If the flag
+  is set, it copies the sampled mesh file and builds the HROM.
+
+  Parameters:
+  j (int): The index of the current realization.
+  problemParameters (ProblemParameters): An object containing problem parameters.
+  IOParameters (IOparameters): An object containing IO parameters.
+  Gparams (GParams): An object containing the random matrix G parameters.
+  ArrayRand1IDENT (np.ndarray): A 5D array for random identification.
+  ArrayRand2IDENT (np.ndarray): A 5D array for random identification.
+  sigma (float): vector hyperparameter 
+  s (float): scalar hyperparameter
+  beta (float): scalar hyperparameter
+  probed_dofs (list): A list of degrees of freedom to be probed.
+  root (str): The root directory for the realizations.
+  proot (str): The parent directory for the realizations.
+  croot2 (str): The child directory for the realizations.
+  batch (list): A list of batch indices.
+
+  Returns:
+  tuple: A tuple containing the index of the realization and the results.
+  """
   from aeros_runs import aeros_buildROM, aeros_buildHROM
-
   print('batch', batch, flush = True)
 
   derivative_flag = len(np.nonzero(batch == j)[0]) > 0 and \
-                   problemParameters.derivative_flag
+            problemParameters.derivative_flag
   if not derivative_flag:
     G = generateG(Gparams, beta,
         problemParameters.x, problemParameters.Dof, problemParameters.Regular, 
@@ -376,24 +523,53 @@ def makeSROMAeroS(j, problemParameters, IOParameters, Gparams,
       f.close()
   return res 
 
-################################################################################
-# Post-process SROM realization results
-# Standalone function as Parallel packages the whole object otherwise
 def postProAeroS(i, j, filename, filename2, derivative_flag, linear_flag, si,
             Vk_probed,
             dVkds_unc, dVkdB_unc, dVkdSig_unc,
             dVkds_probed, dVkdB_probed, dVkdSig_probed,
             n, N, uncdof):
+  """
+  Post-processes SROM realization results.
+
+  This function reads in the results of an SROM realization from a file, processes
+  the results, and returns them in a structured format. If the derivative flag is
+  set, it also calculates and returns the derivatives of the results.
+
+  Parameters:
+  i (int): The index of the current parameter point.
+  j (int): The index of the current realization.
+  filename (str): The name of the file containing the realization results.
+  filename2 (str): The name of the file containing the derivative results.
+  derivative_flag (bool): A flag indicating whether to calculate derivatives.
+  linear_flag (bool): A flag indicating whether the problem is linear.
+  si (int): The index of the current sample.
+  Vk_probed (np.ndarray): The probed Vk values.
+  dVkds_unc (np.ndarray): The derivatives of Vk with respect to s.
+  dVkdB_unc (np.ndarray): The derivatives of Vk with respect to B.
+  dVkdSig_unc (np.ndarray): The derivatives of Vk with respect to Sig.
+  dVkds_probed (np.ndarray): The probed derivatives of Vk with respect to s.
+  dVkdB_probed (np.ndarray): The probed derivatives of Vk with respect to B.
+  dVkdSig_probed (np.ndarray): The probed derivatives of Vk with respect to Sig.
+  n (int): The number of nodes.
+  N (int): The number of realizations.
+  uncdof (int): The number of uncertain degrees of freedom.
+
+  Returns:
+  tuple: A tuple containing the index of the realization, the processed results,
+          and optionally the derivatives of the results.
+  """
+  # Open the file containing the realization results
   f = open(filename, 'r')
   f.readline()
   ncoord = int(f.readline())
-  # vanilla Python code - something faster needed
+  # Read the results into an array
   array = []
   for line in f:
     for x in line.split():
       array.append(x)
   v = np.array(array, dtype=float)
   f.close()
+  # Process the results based on whether the problem is linear or not
   if not linear_flag:
     coord = np.reshape(v, (ncoord + 1, -1), order = 'F')
     sol = (Vk_probed[j,:,:] @ coord[1:,si:])
@@ -542,75 +718,102 @@ class SROMAeroS(SROMBase):
     print('params=', opt_params.x)
     np.save('opt_params.npy', opt_params.x)
     return opt_params.x
-#   return alpha_0
 
-  ##############################################################################
-  # postprocessing
   def postprocessing(self, alpha, n_realiz):
+      """
+      This function performs post-processing on the given alpha values and number of realizations.
 
-    self.Rrow, self.Rcolumn, alpha_0, lb, ub = \
-      initHyperParameters(self.Gparams, self.stochasticParameters)
-    sigma, s, beta = alphaToHyperparameters(alpha, self.Gparams.n,
-                                            self.Rrow, self.Rcolumn)
-    
-    rng = np.random.default_rng(12345)
-    self.problemParameters.N_sim = n_realiz
-    self.ArrayRand1IDENT = rng.random((self.Gparams.d, self.Gparams.nu_p,
-                                  self.Gparams.m, self.Gparams.n,
-                                  self.problemParameters.N_sim))
-    self.ArrayRand2IDENT = rng.random((self.Gparams.d, self.Gparams.nu_p,
-                                  self.Gparams.m, self.Gparams.n,
-                                  self.problemParameters.N_sim))
-    batch = np.arange(0, dtype = int)
-    
-    trealiz = time.time()
-    sol = self.makeAndRunRealizations(sigma, s, beta, batch)[0]
-    print(self.problemParameters.N_sim, ' realizations time: ',
-          time.time() - trealiz, flush = True)
-    
-    
-    rng = np.random.default_rng(12345)
-    self.problemParameters.N_sim = 16
-    self.ArrayRand1IDENT2 = rng.random((self.Gparams.d, self.Gparams.nu_p,
-                                  self.Gparams.m, self.Gparams.n,
-                                  self.problemParameters.N_sim))
-    self.ArrayRand2IDENT2 = rng.random((self.Gparams.d, self.Gparams.nu_p,
-                                  self.Gparams.m, self.Gparams.n,
-                                  self.problemParameters.N_sim))
-    
-    trealiz = time.time()
-    sol_rom = self.makeAndRunRealizations(sigma, 1e-6, beta, batch)[0]
-    mean_rom2 = np.sum(sol_rom,axis=1)/ self.problemParameters.N_sim
-    print(self.problemParameters.N_sim, ' realizations time: ',
-          time.time() - trealiz, flush = True)
-    return sol, mean_rom2
+      Parameters:
+      alpha (array-like): The alpha values to be processed.
+      n_realiz (int): The number of realizations to be processed.
 
-  ##############################################################################
-  # Example of plotting the results
+      Returns:
+      sol (array-like): The solution after running realizations.
+      mean_rom2 (array-like): The mean of the reduced order model after running realizations.
+      """
+      self.Rrow, self.Rcolumn, alpha_0, lb, ub = \
+    initHyperParameters(self.Gparams, self.stochasticParameters)
+      sigma, s, beta = alphaToHyperparameters(alpha, self.Gparams.n,
+                  self.Rrow, self.Rcolumn)
+      
+      rng = np.random.default_rng(12345)
+      self.problemParameters.N_sim = n_realiz
+      self.ArrayRand1IDENT = rng.random((self.Gparams.d, self.Gparams.nu_p,
+                self.Gparams.m, self.Gparams.n,
+                self.problemParameters.N_sim))
+      self.ArrayRand2IDENT = rng.random((self.Gparams.d, self.Gparams.nu_p,
+                self.Gparams.m, self.Gparams.n,
+                self.problemParameters.N_sim))
+      batch = np.arange(0, dtype = int)
+      
+      trealiz = time.time()
+      sol = self.makeAndRunRealizations(sigma, s, beta, batch)[0]
+      print(self.problemParameters.N_sim, ' realizations time: ',
+        time.time() - trealiz, flush = True)
+      
+      
+      rng = np.random.default_rng(12345)
+      self.problemParameters.N_sim = 16
+      self.ArrayRand1IDENT2 = rng.random((self.Gparams.d, self.Gparams.nu_p,
+                self.Gparams.m, self.Gparams.n,
+                self.problemParameters.N_sim))
+      self.ArrayRand2IDENT2 = rng.random((self.Gparams.d, self.Gparams.nu_p,
+                self.Gparams.m, self.Gparams.n,
+                self.problemParameters.N_sim))
+      
+      trealiz = time.time()
+      sol_rom = self.makeAndRunRealizations(sigma, 1e-6, beta, batch)[0]
+      mean_rom2 = np.sum(sol_rom,axis=1)/ self.problemParameters.N_sim
+      print(self.problemParameters.N_sim, ' realizations time: ',
+        time.time() - trealiz, flush = True)
+      return sol, mean_rom2
+
   def plot(self, sol, mean_ref, mean_rom, i_mu, start, pc, dof, filename):
+      """
+      This function plots the results of the solution, mean reference, and mean ROM.
 
-    sol_inf = np.quantile(sol[i_mu,:,:,:], 1 - pc, axis = 0)
-    sol_sup = np.quantile(sol[i_mu,:,:,:], pc, axis = 0)
-    
-    xTest = np.arange(start, mean_ref.shape[1])
-    mean = np.sum(sol,axis=1)/sol.shape[1]
+      Parameters:
+      sol (array-like): The solution to be plotted.
+      mean_ref (array-like): The mean reference to be plotted.
+      mean_rom (array-like): The mean ROM to be plotted.
+      i_mu (int): The index of the mu value to be plotted.
+      start (int): The starting index for the x-axis.
+      pc (float): The percentile for the quantile calculation.
+      dof (int): The degree of freedom for the plot.
+      filename (str): The name of the file where the plot will be saved.
 
-    plt.figure(figsize=(9,5))
-    plt.plot(xTest, mean_ref[dof,start:,i_mu], 'r-', label='HDM')
-    plt.plot(xTest, mean_rom[i_mu,dof,:], 'b-',  label='ROM')
-    plt.plot(xTest,  mean[i_mu,dof,:] , 'm-',  label='Mean SROM')
-    ax = plt.gca()
-    ax.fill_between(xTest, sol_inf[dof,:], sol_sup[dof,:], color='c', alpha=.2)
-    plt.xlabel('$t$')
-    plt.legend(loc='upper left')
-    plt.savefig(filename)
-    plt.close()
-    return 
+      Returns:
+      None
+      """
+      sol_inf = np.quantile(sol[i_mu,:,:,:], 1 - pc, axis = 0)
+      sol_sup = np.quantile(sol[i_mu,:,:,:], pc, axis = 0)
+      
+      xTest = np.arange(start, mean_ref.shape[1])
+      mean = np.sum(sol,axis=1)/sol.shape[1]
 
-  ##############################################################################
-  # NPM cost function
+      plt.figure(figsize=(9,5))
+      plt.plot(xTest, mean_ref[dof,start:,i_mu], 'r-', label='HDM')
+      plt.plot(xTest, mean_rom[i_mu,dof,:], 'b-',  label='ROM')
+      plt.plot(xTest,  mean[i_mu,dof,:] , 'm-',  label='Mean SROM')
+      ax = plt.gca()
+      ax.fill_between(xTest, sol_inf[dof,:], sol_sup[dof,:], color='c', alpha=.2)
+      plt.xlabel('$t$')
+      plt.legend(loc='upper left')
+      plt.savefig(filename)
+      plt.close()
+      return 
+
   def costFunction(self, alpha, batch):
- 
+    """
+    This function calculates the cost function for NPM (Non-Parametric Model).
+    
+    Parameters:
+    alpha (array): Array of hyperparameters.
+    batch (array): Array of batch indices for stochastic gradient descent.
+
+    Returns:
+    None. The function updates the cost_mean and cost_std attributes of the class.
+    """
     sigma, s, beta = alphaToHyperparameters(alpha, self.Gparams.n,
                                             self.Rrow, self.Rcolumn)
     N_sim = self.problemParameters.N_sim
@@ -857,141 +1060,71 @@ class SROMAeroS(SROMBase):
       print('J =  ', '%.17e' % J, flush = True)
       return J
 
-  ##############################################################################
-  # Creates and runs realizations of the stochastic ROM
   def makeAndRunRealizations(self, sigma, s, beta, batch):
- 
-     parallelFlag = True
-    if parallelFlag:
-      nj = int(self.runParameters.ncores_per_node/2)
-    else:
-      nj = 1
+    """
+    Creates and runs realizations of the stochastic ROM.
 
-    # This function parallelizes the computation of ROB realizations and then
-    # runs the corresponding ROMs concurrently using Aero-s in the shared memory 
-    # filesystems (/dev/shm)  of the compute nodes to minimize I/O bottlenecks;
-    # the function should work if called in parallel and launched with disjoint
-    # exec_nodes for evaluating multiple hyper-parameter choices at a time
-    #
-    # Inputs
-    #
-    # Parameters that control where to run Aero-s
-    # runParameters.exec_nodes - pre-allocated nodes where Aero-s is run
-    # runParameters.ncores_per_node - number of cores per compute node
-    #
-    # Construction of realizations of G
-    # Gparams - structure with parameters of G
-    # x - coordinates of nodes where to generate G
-    # Dof, Regular - parameters for the construction of G (see Appendix D)
-    # ArrayRand1IDENT, ArrayRand2IDENT - random arrays
-    # 
-    # Hyperparameters
-    # sigma, s, beta
-    # 
-    # V - ROB
-    #
-    # ROM/Aero-S parameters
-    # problemParameters - structure with problem dependent data/parameters
-    # problemParameters.m_mu - number of parameter points where the SROM is evaluated
-    # problemParameters.rayleigh_damping - Rayleigh damping coefficients
-    # problemParameters.hyperreduction_flag - use-hyperreduction flag
-    # problemParameters.sampled_mesh_flag - using V on a sampled mesh only
-    # problemParmameters.K,problemData.M - cell arrays of stiffness and mass matrices (only for problemData.sampled_mesh_flag==true)
-    # problemParameters.uncdof - unconstrained degrees of freedom
-    # problemParameters.probed_dofs - dofs needed for the computation of QoIs
-    # problemParameters.N_sim - number of realizations per each parameter point
-    #
-    # Outputs
-    # sol - array that stores the solutions at the probed dofs
-    
-    # Determine probed degrees of freedom (whether on sampled or full mesh)
-    if not self.problemParameters.sampled_mesh_flag:
-      probed_dofs = np.copy(self.problemParameters.probed_dofs)
-    else:
-      probed_dofs = np.copy(self.problemParameters.probed_dofs_s)
-    
+    This function generates realizations of the Reduced Order Basis (ROB) and runs
+    the corresponding ROMs concurrently using Aero-s. The computation is parallelized
+    and performed in the shared memory filesystems of the compute nodes to minimize
+    I/O bottlenecks.
+
+    Parameters:
+    sigma, s, beta: Hyperparameters.
+    batch: Batch of realizations to process.
+
+    Returns:
+    tuple: A tuple containing the solutions at the probed degrees of freedom, 
+         and optionally the derivatives of the solutions.
+    """
+    # Determine whether to run in parallel
+    parallelFlag = True
+    nj = int(self.runParameters.ncores_per_node/2) if parallelFlag else 1
+
+    # Determine probed degrees of freedom
+    probed_dofs = np.copy(self.problemParameters.probed_dofs_s) if self.problemParameters.sampled_mesh_flag else np.copy(self.problemParameters.probed_dofs)
+
     # Initialize local variables 
     exec_nodes = self.runParameters.exec_nodes
     ncores_per_node= self.runParameters.ncores_per_node
-  
-    f_unc = 0
-    y_0_unc = 0
-    if self.problemParameters.derivative_flag and \
-       self.problemParameters.linear_flag:
+    f_unc = y_0_unc = 0
+    if self.problemParameters.derivative_flag and self.problemParameters.linear_flag:
       f_unc = self.problemParameters.f[self.problemParameters.uncdof]
       y_0_unc = self.problemParameters.y_0[self.problemParameters.uncdof]
-    
-    tinit = time.time()
 
     # Create unique directory to store files for the SROM realizations
-    nodep = NodeProcessor(self.problemParameters.N_sim,
-                          self.problemParameters.m_mu,
-            self.runParameters.exec_nodes, self.runParameters.ncores_per_node,
-                       self.IOParameters.output_ID)
+    nodep = NodeProcessor(self.problemParameters.N_sim, self.problemParameters.m_mu, self.runParameters.exec_nodes, self.runParameters.ncores_per_node, self.IOParameters.output_ID)
     root, proot, croot2 = nodep.getDirs()
-    
+
     # Generate SROB_dir realizations (in parallel on the local node)
     js = [j for j in range(self.problemParameters.N_sim)]
-    res = Parallel(n_jobs = nj) \
-                (delayed(makeSROMAeroS)(j,
-               self.problemParameters, self.IOParameters, self.Gparams, 
-               self.ArrayRand1IDENT, self.ArrayRand2IDENT, sigma, s, beta,
-               probed_dofs, root, proot, croot2, batch) for j in js)
+    res = Parallel(n_jobs = nj)(delayed(makeSROMAeroS)(j, self.problemParameters, self.IOParameters, self.Gparams, self.ArrayRand1IDENT, self.ArrayRand2IDENT, sigma, s, beta, probed_dofs, root, proot, croot2, batch) for j in js)
+
     # Convert list to arrays
     if self.problemParameters.derivative_flag and len(batch) > 0:
-      Vk_unc, Vk_probed, Vk_full, dVkds_unc, dVkdB_unc, dVkdSig_unc, \
-      dVkds_probed, dVkdB_probed, dVkdSig_probed = convertParallelListToArray(
-         res, (self.problemParameters.N_sim,))
+      Vk_unc, Vk_probed, Vk_full, dVkds_unc, dVkdB_unc, dVkdSig_unc, dVkds_probed, dVkdB_probed, dVkdSig_probed = convertParallelListToArray(res, (self.problemParameters.N_sim,))
     else:
-      Vk_unc, Vk_probed, Vk_full =  convertParallelListToArray(res,
-        (self.problemParameters.N_sim,))
-      dVkds_unc = dVkdB_unc = dVkdSig_unc = dVkds_probed = dVkdB_probed = \
-         dVkdSig_probed = np.array([])
-    print('SROM time: ', time.time() - tinit, flush = True)
-  
-    # Cleanup shared memory directories on the compute nodes
-    # Transfer & run the batch files on the compute nodes
+      Vk_unc, Vk_probed, Vk_full =  convertParallelListToArray(res, (self.problemParameters.N_sim,))
+      dVkds_unc = dVkdB_unc = dVkdSig_unc = dVkds_probed = dVkdB_probed = dVkdSig_probed = np.array([])
+
+    # Cleanup shared memory directories on the compute nodes and run the batch files
     nodep.runJobs(parallelFlag, batch)
-  
+
     # Post-process the results
-    tpost = time.time()
-    data = []
-    for i in range(self.problemParameters.m_mu):
-      for j in range(self.problemParameters.N_sim):
-        k = j * self.problemParameters.m_mu+ i
-        croot = '%s/%d' % (root, k)
-        filename = '%s/%s' % (croot, file_format(self.problemParameters.mu[i,:], 'dis'))
-        filename2 = '%s/%s.%d' % (self.IOParameters.output_ID,
-                                  self.IOParameters.exact_grad_output, k)
-        derivative_flag = len(np.nonzero(batch == j)[0]) > 0 and \
-                         self.problemParameters.derivative_flag
-        data.append((i, j, filename, filename2, derivative_flag))
+    data = [(i, j, '%s/%s' % (root + '/%d' % (j * self.problemParameters.m_mu+ i), file_format(self.problemParameters.mu[i,:], 'dis')), '%s/%s.%d' % (self.IOParameters.output_ID, self.IOParameters.exact_grad_output, j * self.problemParameters.m_mu+ i), len(np.nonzero(batch == j)[0]) > 0 and self.problemParameters.derivative_flag) for i in range(self.problemParameters.m_mu) for j in range(self.problemParameters.N_sim)]
+    sol_ = Parallel(n_jobs = nj)(delayed(postProAeroS)(datum[0], datum[1], datum[2], datum[3], datum[4], self.problemParameters.linear_flag, self.problemParameters.sol_start_idx, Vk_probed, dVkds_unc, dVkdB_unc, dVkdSig_unc, dVkds_probed, dVkdB_probed, dVkdSig_probed, self.Gparams.n, self.problemParameters.V.shape[0], self.problemParameters.uncdof) for datum in data)
 
-    sol_ = Parallel(n_jobs = nj) \
-          (delayed(postProAeroS)(
-              datum[0], datum[1], datum[2], datum[3], datum[4],
-              self.problemParameters.linear_flag,
-              self.problemParameters.sol_start_idx,
-              Vk_probed,
-              dVkds_unc, dVkdB_unc, dVkdSig_unc,
-              dVkds_probed, dVkdB_probed, dVkdSig_probed, 
-              self.Gparams.n, self.problemParameters.V.shape[0],
-              self.problemParameters.uncdof)
-           for datum in data)
-
+    # Convert list to arrays
     if self.problemParameters.derivative_flag and len(batch) > 0:
-      sol, dVyds, dVydB, dVydSig = convertParallelListToArray(sol_, \
-        (self.problemParameters.m_mu, self.problemParameters.N_sim))
+      sol, dVyds, dVydB, dVydSig = convertParallelListToArray(sol_, (self.problemParameters.m_mu, self.problemParameters.N_sim))
     else:
-      sol = convertParallelListToArray(sol_,
-         (self.problemParameters.m_mu, self.problemParameters.N_sim))[0]
-  
+      sol = convertParallelListToArray(sol_, (self.problemParameters.m_mu, self.problemParameters.N_sim))[0]
+
     # Delete the directory with the realizations input files and results
     os.system('rm -rf %s' % root)
-    print('Post-pro time: ', time.time() - tpost, flush = True)
-  
+
+    # Return the solutions and their derivatives
     if not self.problemParameters.derivative_flag or len(batch) == 0:
       return sol, [], [], [], Vk_unc, [], [], []
     else:
       return sol, dVyds, dVydB, dVydSig, Vk_unc, dVkds_unc, dVkdB_unc, dVkdSig_unc
-################################################################################
