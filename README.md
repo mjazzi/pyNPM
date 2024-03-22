@@ -26,7 +26,7 @@ pyNPM is a Python driver that implements the non-parametric probabilistic method
 ## Usage
 
 To run the code:
-1. Create and populate the input#ID.d/ output#ID.d/ (e.g. input0.d/ and output0.d for problem ID 0) directories with problem and simulation specific files, and create a copy of the input#ID.d/parameters.py file populated with the corresponding problem specific parameters).
+1. Create and populate the input#ID.d/ output#ID.d/ (e.g. input0.d/ and output0.d for problem ID 0) subdirectories with problem and simulation specific files (obtained using Aero-S), and create a copy of the input#ID.d/parameters.py file populated with the corresponding problem specific parameters).
 2. Modify the `Run.py` script to instantiate an object of the `SROMAeroS()` class (or a derived class) initialized with the path to the appropriate input and input ID directory.
 3. From the command line or a batch script, allocate compute nodes as needed and execute:
     ```bash
