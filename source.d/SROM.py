@@ -331,6 +331,7 @@ def convertParallelListToArray(res, ixDim):
       else:
         resA[ii][res[i][0], res[i][1]] = res[i][ii + ni]
   return tuple(resA)
+    
 class SROMBase:
   """
   Base class for Stochastic Reduced Order Models (SROM).
